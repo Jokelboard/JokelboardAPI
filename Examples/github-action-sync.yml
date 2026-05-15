@@ -1,0 +1,98 @@
+# .github/workflows/sync-issues-to-jokelboard.yml
+#
+# GitHub Actions example: automatically create Jokelboard cards
+# when issues are opened or labeled in a GitHub repository.
+#
+# Secrets required (set in repo Settings → Secrets and variables → Actions):
+#   JKB_API_TOKEN   — a Board API token with boards:write scope
+#   JKB_BOARD_ID    — the target board ID (e.g. "board-abc123xyz")
+#
+# The workflow uses only curl + jq (available on GitHub-hosted runners).
+
+name: Sync GitHub Issues → Jokelboard
+
+on:
+  issues:
+    types: [opened, labeled, reopened]
+
+jobs:
+  create-card:
+    runs-on: ubuntu-latest
+    # Only run for issues that have the "needs-triage" label
+    # or are newly opened. Adjust the condition to your workflow.
+    if: >
+      github.event.action == 'opened' ||
+      (github.event.action == 'labeled' && github.event.label.name == 'needs-triage')
+
+    steps:
+      - name: Checkout (for any future scripts)
+        uses: actions/checkout@v4
+
+      - name: Create Jokelboard card from GitHub Issue
+        env:
+          JKB_TOKEN: ${{ secrets.JKB_API_TOKEN }}
+          BOARD_ID: ${{ secrets.JKB_BOARD_ID }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body || 'No description provided.' }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          REPO: ${{ github.repository }}
+          AUTHOR: ${{ github.event.issue.user.login }}
+        run: |
+          set -euo pipefail
+
+          echo "Creating card for issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}"
+
+          # 1. Get current board revision (prevents 409 on concurrent runs)
+          BOARD=$(curl -sS -H "Authorization: Bearer ${JKB_TOKEN}" \
+            "https://jokelboard.com/api/v1/boards/${BOARD_ID}")
+          REVISION=$(echo "$BOARD" | jq -r '.board.revision')
+
+          # 2. Find or create a list called "GitHub Issues"
+          LIST_ID=$(echo "$BOARD" | jq -r '
+            .board.data.lists[] | select(.title == "GitHub Issues") | .id
+          ')
+
+          if [ -z "$LIST_ID" ] || [ "$LIST_ID" = "null" ]; then
+            echo "List 'GitHub Issues' not found — creating it..."
+            LIST_RESP=$(curl -sS -X POST \
+              -H "Authorization: Bearer ${JKB_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d '{"title":"GitHub Issues","revision":'"$REVISION"'}' \
+              "https://jokelboard.com/api/v1/boards/${BOARD_ID}/lists")
+            LIST_ID=$(echo "$LIST_RESP" | jq -r '.list.id')
+            REVISION=$(echo "$LIST_RESP" | jq -r '.board.revision // .revision // '"$REVISION")
+          fi
+
+          # 3. Create the card
+          CARD_PAYLOAD=$(jq -n \
+            --arg title "[#${ISSUE_NUMBER}] ${ISSUE_TITLE}" \
+            --arg desc "Imported from GitHub issue by @${AUTHOR}\n\n${ISSUE_BODY}\n\nSource: ${ISSUE_URL}" \
+            --argjson revision "$REVISION" \
+            '{
+              listId: "'"$LIST_ID"'",
+              title: $title,
+              severity: "P2",
+              description: $desc,
+              descriptionMode: "markdown",
+              labels: [{name: "github", color: "#6e5494"}],
+              attachments: [{name: "GitHub Issue", url: "'"$ISSUE_URL"'"}],
+              fieldValues: {
+                "github-issue": ("'"$ISSUE_NUMBER"'"),
+                "repo": "'"$REPO"'",
+                "author": "'"$AUTHOR"'"
+              },
+              revision: $revision
+            }')
+
+          CARD_RESP=$(curl -sS -X POST \
+            -H "Authorization: Bearer ${JKB_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$CARD_PAYLOAD" \
+            "https://jokelboard.com/api/v1/boards/${BOARD_ID}/cards")
+
+          CARD_ID=$(echo "$CARD_RESP" | jq -r '.card.id')
+          TICKET=$(echo "$CARD_RESP" | jq -r '.card.ticket')
+
+          echo "✅ Created Jokelboard card ${TICKET} (id=${CARD_ID})"
+          echo "   Link: https://jokelboard.com/board/${BOARD_ID}#card-${CARD_ID}"

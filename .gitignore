@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Secrets — never commit tokens
+.env
+.env.*
+*.token
+jkb_*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build / temp
+dist/
+build/
+*.log
+/tmp/
+*.tgz

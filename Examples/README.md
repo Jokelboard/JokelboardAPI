@@ -1,0 +1,41 @@
+# Board API Usage Examples
+
+This directory contains language- and tool-specific examples for the Jokelboard Board API v1.
+
+All examples are **self-contained** — they use only standard library HTTP clients or very common packages (requests, curl, jq). None of them import or depend on any code from the main Jokelboard repository.
+
+## Quick Start
+
+1. Create an API token from the **Automations → Board API…** menu inside any board (or via `POST /api/tokens` with a web session).
+2. Copy the secret **immediately** — it is shown only once.
+3. Export the token and a board ID:
+
+   ```bash
+   export JKB_TOKEN="jkb_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   export BOARD_ID="board-abc123def456"
+   ```
+
+4. Run the example of your choice.
+
+## Examples
+
+| File                        | Language / Tool          | What it demonstrates                              | Requirements          |
+|-----------------------------|--------------------------|---------------------------------------------------|-----------------------|
+| `curl-basic.sh`             | bash + curl + jq         | Auth check, list boards, create list+card+comment | curl, jq, bash        |
+| `node-full-flow.js`         | Node.js 18+ (native fetch) | Full flow with revision retry, PATCH, MOVE, bulk import | Node 18+             |
+| `python-client.py`          | Python 3 + requests      | CSV-style import, fieldValues + descriptionMode=fields, 409 handling | `pip install requests` |
+| `github-action-sync.yml`    | GitHub Actions           | React to `issues` webhooks and create cards automatically | A GitHub repo with Actions + two secrets |
+
+## Tips for Writing Your Own Client
+
+- Always send the latest `revision` on mutating calls to avoid 409s.
+- Handle `429 card_rate_limited` with the `retryAfter` value.
+- On organisation boards, every write appears in the audit log.
+- Use the narrowest token scope you can (`boards:read` is often sufficient for dashboards and read-only syncs).
+- The `ticket` field on cards is a short human-friendly identifier (e.g. `PROD-1842`). It is generated server-side if you omit it.
+
+## Need an SDK?
+
+None exist yet. The API is deliberately small and stable, so most teams just use the HTTP client built into their language. If you build and open-source a typed client (TypeScript, Go, Rust, etc.), open a PR here — we will link it.
+
+Happy automating!
