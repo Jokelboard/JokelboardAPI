@@ -36,6 +36,6 @@ All examples are **self-contained** — they use only standard library HTTP clie
 
 ## Need an SDK?
 
-None exist yet. The API is deliberately small and stable, so most teams just use the HTTP client built into their language. If you build and open-source a typed client (TypeScript, Go, Rust, etc.), open a PR here — we will link it.
+None exist yet. The API is deliberately small and stable, so most teams just use the HTTP client built into their language.
 
 Happy automating!

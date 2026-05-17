@@ -4,7 +4,6 @@
 
 The Board API allows external applications, scripts, CI/CD pipelines, automation tools, and AI agents to programmatically read from and write to Jokelboard boards over HTTPS using simple REST endpoints secured by personal access tokens.
 
-- **Repository**: https://github.com/Jokelboard/JokelboardAPI
 - **Live API Base URL**: `https://jokelboard.com/api/v1`
 - **Status**: Stable (production-ready since 2026)
 
@@ -25,8 +24,6 @@ The Board API allows external applications, scripts, CI/CD pipelines, automation
 - [Audit Logging & Mentions (Org Boards)](#audit-logging--mentions-org-boards)
 - [Examples](#examples)
 - [Security Best Practices](#security-best-practices)
-- [Self-Hosting](#self-hosting)
-- [Contributing](#contributing)
 - [License](#license)
 
 ---
@@ -519,36 +516,11 @@ All examples are self-contained and do **not** depend on any Jokelboard source f
 
 ---
 
-## Self-Hosting
-
-If you run your own Jokelboard instance:
-
-- The API routes are mounted at the same paths.
-- Replace `https://jokelboard.com` with your `BASE_URL`.
-- API access is still gated by the same tier/perm logic (you can edit `server/tiers.js` locally for testing).
-- Token storage and hashing are identical.
-
----
-
-## Contributing
-
-This repository contains only documentation and usage examples. The actual implementation lives in the main [Jokelboard](https://github.com/Jokelboard/Jokelboard) monorepo.
-
-Improvements to docs, new example languages, or clarifications of edge cases are welcome via pull request.
-
-When adding an example, please:
-- Keep it under 100 lines
-- Use only the public HTTP surface
-- Include comments explaining each step
-- Handle the common error codes (401/403/409/429)
-
----
-
 ## License
 
-Documentation and examples in this repository are released under the MIT License.
+Jokelboard is proprietary commercial software. All rights reserved.
 
-The Jokelboard server implementation itself uses a separate license — see the main repository for details.
+Documentation, examples, and API access are provided solely to customers with valid paid subscriptions in accordance with Jokelboard's terms of service. Unauthorized reproduction, modification, or distribution is prohibited.
 
 ---
 
