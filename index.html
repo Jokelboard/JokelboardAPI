@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Jokelboard API • Documentation</title>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+  <meta name="description" content="Official documentation and examples for the Jokelboard Board API (v1). Programmatic access for automation, CI/CD, and integrations.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
+  <style>
+    :root {
+      --docsify-name-color: #2563eb;
+    }
+    .sidebar .app-name {
+      font-weight: 700;
+      letter-spacing: -.02em;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    window.$docsify = {
+      name: 'Jokelboard API',
+      nameLink: '/',
+      repo: 'https://github.com/Jokelboard/JokelboardAPI',
+      loadSidebar: true,
+      subMaxLevel: 3,
+      auto2top: true,
+      maxLevel: 4,
+      search: {
+        maxAge: 86400000,
+        paths: 'auto',
+        placeholder: 'Search the API docs...',
+        noData: 'No results found.',
+      },
+      plugins: [
+        function (hook) {
+          hook.beforeEach(function (html) {
+            // Add a small commercial notice at the bottom of each page
+            return html + '\n\n---\n\n> **Jokelboard** is proprietary commercial software. API access requires a paid subscription. See [jokelboard.com](https://jokelboard.com) for details.';
+          });
+        }
+      ]
+    }
+  </script>
+  <!-- Docsify core -->
+  <script src="//cdn.jsdelivr.net/npm/docsify@4"></script>
+  <!-- Search plugin -->
+  <script src="//cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
+  <!-- Copy code plugin -->
+  <script src="//cdn.jsdelivr.net/npm/docsify-copy-code@2"></script>
+</body>
+</html>
