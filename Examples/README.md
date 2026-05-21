@@ -6,7 +6,10 @@ All examples are **self-contained** — they use only standard library HTTP clie
 
 ## Quick Start
 
-1. Create an API token from the **Automations → Board API…** menu inside any board (or via `POST /api/tokens` with a web session).
+1. Create an API key from one of the current key-management surfaces:
+   - Board key: board **Automations** menu, or `POST /api/v1/boards/:id/tokens`
+   - Profile key: **User Settings -> Security -> API Keys**, or `POST /api/me/tokens`
+   - Organisation key: organisation **API Keys** tab, or `POST /api/organisations/:id/tokens`
 2. Copy the secret **immediately** — it is shown only once.
 3. Export the token and a board ID:
 
@@ -31,7 +34,9 @@ All examples are **self-contained** — they use only standard library HTTP clie
 - Always send the latest `revision` on mutating calls to avoid 409s.
 - Handle `429 card_rate_limited` with the `retryAfter` value.
 - On organisation boards, every write appears in the audit log.
-- Use the narrowest token scope you can (`boards:read` is often sufficient for dashboards and read-only syncs).
+- Use the narrowest key reach that works: board key before profile or organisation key.
+- Use `categoryId` for the card category. `severity` is still accepted as a legacy alias.
+- Set custom `fieldValues` with `PATCH /api/v1/boards/:id/cards/:cardId`; card creation does not apply them.
 - The `ticket` field on cards is a short human-friendly identifier (e.g. `PROD-1842`). It is generated server-side if you omit it.
 
 ## Need an SDK?

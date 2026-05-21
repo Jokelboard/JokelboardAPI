@@ -22,7 +22,7 @@ set -euo pipefail
 : "${JKB_TOKEN:?Set JKB_TOKEN environment variable to your jkb_... token}"
 : "${BOARD_ID:?Set BOARD_ID to the board you want to modify}"
 
-BASE="https://jokelboard.com/api/v1"
+BASE="https://api.jokelboard.com/api/v1"
 AUTH_HEADER="Authorization: Bearer ${JKB_TOKEN}"
 
 echo "== 1. Verify token and identity =="
@@ -35,7 +35,7 @@ curl -sS -H "$AUTH_HEADER" "$BASE/boards" | jq .
 echo
 echo "== 3. Fetch target board (to get revision) =="
 BOARD_JSON=$(curl -sS -H "$AUTH_HEADER" "$BASE/boards/${BOARD_ID}")
-echo "$BOARD_JSON" | jq '{id, name, revision, listCount: (.board.data.lists | length)}'
+echo "$BOARD_JSON" | jq '.board | {id, name, revision, listCount: (.data.lists | length)}'
 
 REVISION=$(echo "$BOARD_JSON" | jq -r '.board.revision')
 echo "Current revision: $REVISION"
@@ -56,7 +56,7 @@ CARD_RESP=$(curl -sS -X POST -H "$AUTH_HEADER" -H "Content-Type: application/jso
   -d "{
     \"listId\": \"${LIST_ID}\",
     \"title\": \"Investigate API example script\",
-    \"severity\": \"P2\",
+    \"categoryId\": \"P2\",
     \"description\": \"This card was created by curl-basic.sh\",
     \"descriptionMode\": \"markdown\",
     \"labels\": [{\"name\": \"automation\", \"color\": \"#5e9cff\"}],

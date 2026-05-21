@@ -17,7 +17,7 @@
  *   - Handle 409 revision conflicts with automatic retry
  */
 
-const BASE = 'https://jokelboard.com/api/v1';
+const BASE = 'https://api.jokelboard.com/api/v1';
 
 const token = process.env.JKB_TOKEN;
 const boardId = process.env.BOARD_ID;
@@ -101,31 +101,33 @@ async function main() {
 
   // 4. Simulate incoming work items (e.g. from GitHub Issues, Linear, PagerDuty, etc.)
   const incomingItems = [
-    { title: '[CI] Deploy to staging failed', severity: 'P1', description: 'Pipeline #4821 errored on step "e2e"' },
-    { title: 'Add rate-limit headers to public API', severity: 'P2' },
-    { title: 'Update privacy policy link in footer', severity: 'P3' },
+    { title: '[CI] Deploy to staging failed', categoryId: 'P1', description: 'Pipeline #4821 errored on step "e2e"' },
+    { title: 'Add rate-limit headers to public API', categoryId: 'P2' },
+    { title: 'Update privacy policy link in footer', categoryId: 'P3' },
   ];
+  const createdCards = [];
 
   for (const item of incomingItems) {
     const payload = {
       title: item.title,
-      severity: item.severity || 'P2',
+      categoryId: item.categoryId || 'P2',
       description: item.description || '',
       descriptionMode: 'plain',
       labels: [{ name: 'ci', color: '#ff9f1c' }],
       assignees: [me.user.sub],
     };
     const { card } = await createCardWithRevision(ciList.id, payload, board.revision);
+    createdCards.push(card);
     console.log(`  + Created card: ${card.title} (${card.id})`);
     board = await getBoardWithRetry(); // keep revision fresh
   }
 
-  // 5. PATCH the first card we created (raise severity + add checklist)
-  const firstCard = ciList.cards?.[ciList.cards.length - 3]; // rough index
+  // 5. PATCH the first card we created (raise category + add checklist)
+  const firstCard = createdCards[0];
   if (firstCard) {
     console.log(`\nPatching card ${firstCard.id}...`);
     const patch = {
-      severity: 'P0',
+      categoryId: 'P0',
       checklist: {
         items: [
           { text: 'Re-run failed job with --debug', done: false },
@@ -138,7 +140,7 @@ async function main() {
       method: 'PATCH',
       body: JSON.stringify(patch),
     });
-    console.log(`  ✓ Severity now ${patched.severity}, checklist items: ${patched.checklist?.items?.length || 0}`);
+    console.log(`  ✓ Category now ${patched.categoryId}, checklist items: ${patched.checklist?.items?.length || 0}`);
     board = await getBoardWithRetry();
   }
 

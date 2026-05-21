@@ -27,7 +27,7 @@ import json
 import requests
 from datetime import datetime, timezone
 
-BASE = "https://jokelboard.com/api/v1"
+BASE = "https://api.jokelboard.com/api/v1"
 TOKEN = os.environ.get("JKB_TOKEN")
 BOARD_ID = os.environ.get("BOARD_ID")
 
@@ -60,15 +60,15 @@ def get_board():
     return api("GET", f"/boards/{BOARD_ID}")["board"]
 
 def create_list(title):
-    return api("POST", f"/boards/{BOARD_ID}/lists", json={"title": title})["list"]
+    return api("POST", f"/boards/{BOARD_ID}/lists", json={"title": title})
 
 def create_card(list_id, payload, revision):
     payload = {**payload, "revision": revision}
-    return api("POST", f"/boards/{BOARD_ID}/cards", json=payload)["card"]
+    return api("POST", f"/boards/{BOARD_ID}/cards", json=payload)
 
 def patch_card(card_id, patch, revision):
     patch = {**patch, "revision": revision}
-    return api("PATCH", f"/boards/{BOARD_ID}/cards/{card_id}", json=patch)["card"]
+    return api("PATCH", f"/boards/{BOARD_ID}/cards/{card_id}", json=patch)
 
 def add_comment(card_id, text, revision):
     return api("POST", f"/boards/{BOARD_ID}/cards/{card_id}/comments",
@@ -96,16 +96,18 @@ def main():
     lists = board["data"].get("lists", [])
     target_list = next((l for l in lists if l["title"] == "Python Imports"), None)
     if not target_list:
-        target_list = create_list("Python Imports")
+        list_resp = create_list("Python Imports")
+        target_list = list_resp["list"]
+        board = list_resp.get("board", board)
         print(f"Created list: {target_list['title']}")
     else:
         print(f"Using existing list: {target_list['title']}")
 
     # 4. Import a batch of items (imagine this comes from a CSV, Jira export, RSS feed, etc.)
     work_items = [
-        {"title": "Migrate legacy auth service to new OIDC provider", "severity": "P1", "labels": ["auth", "migration"]},
-        {"title": "Add SLO dashboard for checkout flow", "severity": "P2", "labels": ["observability"]},
-        {"title": "Document fieldValues usage in the public API", "severity": "P3", "labels": ["docs", "api"]},
+        {"title": "Migrate legacy auth service to new OIDC provider", "categoryId": "P1", "labels": ["auth", "migration"]},
+        {"title": "Add SLO dashboard for checkout flow", "categoryId": "P2", "labels": ["observability"]},
+        {"title": "Document fieldValues usage in the public API", "categoryId": "P3", "labels": ["docs", "api"]},
     ]
 
     current_rev = board["revision"]
@@ -115,35 +117,32 @@ def main():
         card_payload = {
             "listId": target_list["id"],
             "title": item["title"],
-            "severity": item["severity"],
+            "categoryId": item["categoryId"],
             "description": f"Imported at {datetime.now(timezone.utc).isoformat()}",
             "descriptionMode": "markdown",
             "labels": [{"name": lbl, "color": "#c7ff5e"} for lbl in item.get("labels", [])],
-            "fieldValues": {
-                "source": "python-example",
-                "import-batch": "2026-05-demo",
-            },
         }
         try:
-            card = create_card(target_list["id"], card_payload, current_rev)
+            card_resp = create_card(target_list["id"], card_payload, current_rev)
         except RuntimeError as e:
             if getattr(e, "status", None) == 409:
                 print("  [!] 409 revision conflict — refetching...")
                 board = get_board()
                 current_rev = board["revision"]
-                card = create_card(target_list["id"], card_payload, current_rev)
+                card_resp = create_card(target_list["id"], card_payload, current_rev)
             else:
                 raise
+        card = card_resp["card"]
+        current_rev = card_resp.get("board", {}).get("revision", current_rev)
         print(f"  + {card['title']}  (id={card['id']}, ticket={card.get('ticket')})")
         created_cards.append(card)
-        current_rev = card.get("revision") or current_rev   # server returns updated board in some paths
         time.sleep(0.2)  # be nice to the burst limiter
 
     # 5. Update the middle card with custom fields + descriptionMode=fields
     if len(created_cards) >= 2:
         middle = created_cards[1]
         print(f"\nUpdating card {middle['id']} with fieldValues + descriptionMode=fields...")
-        updated = patch_card(
+        patch_resp = patch_card(
             middle["id"],
             {
                 "descriptionMode": "fields",
@@ -158,14 +157,17 @@ def main():
             },
             current_rev,
         )
+        updated = patch_resp["card"]
+        current_rev = patch_resp.get("board", {}).get("revision", current_rev)
         print(f"  ✓ descriptionMode now '{updated.get('descriptionMode')}'")
         print(f"  ✓ fieldValues keys: {list(updated.get('fieldValues', {}).keys())}")
-        current_rev = updated.get("revision") or current_rev
 
     # 6. Move the last card to a "Done" list (create one if needed)
     done_list = next((l for l in board["data"].get("lists", []) if "done" in l["title"].lower()), None)
     if not done_list:
-        done_list = create_list("Done (from Python)")
+        list_resp = create_list("Done (from Python)")
+        done_list = list_resp["list"]
+        current_rev = list_resp.get("board", {}).get("revision", current_rev)
         print(f"\nCreated Done list: {done_list['title']}")
 
     last_card = created_cards[-1]
