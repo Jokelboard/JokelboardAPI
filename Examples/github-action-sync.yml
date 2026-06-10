@@ -50,10 +50,10 @@ jobs:
 
           # 2. Find or create a list called "GitHub Issues"
           LIST_ID=$(echo "$BOARD" | jq -r '
-            .board.data.lists[] | select(.title == "GitHub Issues") | .id
+            [.board.data.lists[] | select(.title == "GitHub Issues") | .id] | first // empty
           ')
 
-          if [ -z "$LIST_ID" ] || [ "$LIST_ID" = "null" ]; then
+          if [ -z "$LIST_ID" ]; then
             echo "List 'GitHub Issues' not found — creating it..."
             LIST_RESP=$(curl -sS -X POST \
               -H "Authorization: Bearer ${JKB_TOKEN}" \
@@ -64,19 +64,24 @@ jobs:
             REVISION=$(echo "$LIST_RESP" | jq -r '.board.revision // .revision // '"$REVISION")
           fi
 
-          # 3. Create the card
+          # 3. Create the card. Newlines are joined inside the jq program
+          #    (escape sequences in --arg values are NOT interpreted), and
+          #    the title is clamped to the API's 200-character cap.
           CARD_PAYLOAD=$(jq -n \
+            --arg listId "$LIST_ID" \
             --arg title "[#${ISSUE_NUMBER}] ${ISSUE_TITLE}" \
-            --arg desc "Imported from GitHub issue by @${AUTHOR}\n\n${ISSUE_BODY}\n\nSource: ${ISSUE_URL}" \
+            --arg author "$AUTHOR" \
+            --arg body "$ISSUE_BODY" \
+            --arg url "$ISSUE_URL" \
             --argjson revision "$REVISION" \
             '{
-              listId: "'"$LIST_ID"'",
-              title: $title,
+              listId: $listId,
+              title: ($title | .[0:200]),
               categoryId: "P2",
-              description: $desc,
+              description: (("Imported from GitHub issue by @" + $author + "\n\n" + $body + "\n\nSource: " + $url) | .[0:8000]),
               descriptionMode: "markdown",
               labels: [{name: "github", color: "#6e5494"}],
-              attachments: [{name: "GitHub Issue", url: "'"$ISSUE_URL"'"}],
+              attachments: [{name: "GitHub Issue", url: $url}],
               revision: $revision
             }')
 

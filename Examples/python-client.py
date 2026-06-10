@@ -50,7 +50,7 @@ def api(method, path, **kwargs):
     except Exception:
         body = {"raw": resp.text}
     if not resp.ok:
-        err = RuntimeError(body.get("message") or body.get("error") or f"HTTP {resp.status}")
+        err = RuntimeError(body.get("message") or body.get("error") or f"HTTP {resp.status_code}")
         err.status = resp.status_code
         err.body = body
         raise err
@@ -146,12 +146,13 @@ def main():
             middle["id"],
             {
                 "descriptionMode": "fields",
+                # Field values are stored as strings (max 64 chars each)
                 "fieldValues": {
                     "source": "python-example",
-                    "import-batch": "2026-05-demo",
+                    "import-batch": "2026-06-demo",
                     "owner-team": "platform",
-                    "estimated-hours": 6,
-                    "ready-for-review": True,
+                    "estimated-hours": "6",
+                    "ready-for-review": "true",
                 },
                 "description": "This card now uses structured fields instead of markdown.",
             },

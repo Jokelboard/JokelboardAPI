@@ -2,7 +2,7 @@
 # curl-basic.sh
 #
 # Minimal example demonstrating Board API usage with curl.
-# Requires: curl, bash, and a valid API token with boards:read + boards:write.
+# Requires: curl, jq, bash, and a valid API token with boards:read + boards:write.
 #
 # Usage:
 #   export JKB_TOKEN="jkb_your_token_here"
@@ -25,6 +25,13 @@ set -euo pipefail
 BASE="https://api.jokelboard.com/api/v1"
 AUTH_HEADER="Authorization: Bearer ${JKB_TOKEN}"
 
+# Helper: fetch the board's current revision. Sending it with each write
+# lets the server reject the request (409) if someone else changed the
+# board in between, instead of silently overwriting their change.
+current_revision() {
+  curl -sS -H "$AUTH_HEADER" "$BASE/boards/${BOARD_ID}" | jq -r '.board.revision'
+}
+
 echo "== 1. Verify token and identity =="
 curl -sS -H "$AUTH_HEADER" "$BASE/me" | jq .
 
@@ -43,7 +50,7 @@ echo "Current revision: $REVISION"
 echo
 echo "== 4. Create a new list =="
 LIST_RESP=$(curl -sS -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
-  -d '{"title": "API Test Lane"}' \
+  -d "{\"title\": \"API Test Lane\", \"revision\": ${REVISION}}" \
   "$BASE/boards/${BOARD_ID}/lists")
 echo "$LIST_RESP" | jq '{ok, list: .list}'
 
@@ -52,6 +59,7 @@ echo "Created list ID: $LIST_ID"
 
 echo
 echo "== 5. Create a card in the new list =="
+REVISION=$(current_revision)  # the list creation bumped the revision
 CARD_RESP=$(curl -sS -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
   -d "{
     \"listId\": \"${LIST_ID}\",
@@ -60,7 +68,8 @@ CARD_RESP=$(curl -sS -X POST -H "$AUTH_HEADER" -H "Content-Type: application/jso
     \"description\": \"This card was created by curl-basic.sh\",
     \"descriptionMode\": \"markdown\",
     \"labels\": [{\"name\": \"automation\", \"color\": \"#5e9cff\"}],
-    \"due\": {\"iso\": \"2026-06-15T17:00:00Z\"}
+    \"due\": {\"iso\": \"2026-07-15T17:00:00Z\"},
+    \"revision\": ${REVISION}
   }" \
   "$BASE/boards/${BOARD_ID}/cards")
 echo "$CARD_RESP" | jq '{ok, card: .card}'
@@ -69,8 +78,9 @@ CARD_ID=$(echo "$CARD_RESP" | jq -r '.card.id')
 
 echo
 echo "== 6. Add a comment mentioning a teammate =="
+REVISION=$(current_revision)
 curl -sS -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
-  -d '{"text": "Hey @alice, the curl example just created this card. Ready for review?"}' \
+  -d "{\"text\": \"Hey @alice, the curl example just created this card. Ready for review?\", \"revision\": ${REVISION}}" \
   "$BASE/boards/${BOARD_ID}/cards/${CARD_ID}/comments" | jq .
 
 echo

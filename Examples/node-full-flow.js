@@ -95,7 +95,7 @@ async function main() {
   console.log(`Board: ${board.name} (revision ${board.revision})`);
   console.log(`Lists: ${board.data.lists.length}, Cards: ${board.data.lists.reduce((n, l) => n + (l.cards?.length || 0), 0)}\n`);
 
-  // 3. Ensure we have an "CI / Automation" list
+  // 3. Ensure we have a "CI / Automation" list
   const ciList = await findOrCreateList(board, 'CI / Automation');
   console.log(`Using list: ${ciList.title} (${ciList.id})\n`);
 
@@ -152,6 +152,7 @@ async function main() {
       body: JSON.stringify({ title: 'Done (API)' }),
     });
     doneList = created;
+    board = await getBoardWithRetry(); // creating the list bumped the revision
   }
 
   const lastCardId = board.data.lists
