@@ -28,6 +28,7 @@ All examples are **self-contained** — they use only standard library HTTP clie
 | `node-full-flow.js`         | Node.js 18+ (native fetch) | Full flow with revision retry, PATCH, MOVE, bulk import | Node 18+             |
 | `python-client.py`          | Python 3 + requests      | CSV-style import, fieldValues + descriptionMode=fields, 409 handling | `pip install requests` |
 | `github-action-sync.yml`    | GitHub Actions           | React to `issues` webhooks and create cards automatically | A GitHub repo with Actions + two secrets |
+| `plugin-checklist.sh`       | bash + curl + jq         | Board Plugin API: access probe, checklist summary, item toggle | curl, jq, bash, `plugin:checklist` key |
 
 ## Tips for Writing Your Own Client
 
@@ -36,8 +37,9 @@ All examples are **self-contained** — they use only standard library HTTP clie
 - On organisation boards, every write appears in the audit log.
 - Use the narrowest key reach that works: board key before profile or organisation key.
 - Use `categoryId` for the card category. `severity` is still accepted as a legacy alias.
-- Set custom `fieldValues` with `PATCH /api/v1/boards/:id/cards/:cardId`; card creation does not apply them.
+- Set custom `fieldValues` with `PATCH /api/v1/boards/:id/cards/:cardId`; card creation does not apply them. Values are stored as strings (max 64 characters each, 64 keys per card).
 - The `ticket` field on cards is a short human-friendly identifier (e.g. `PROD-1842`). It is generated server-side if you omit it.
+- Plugin keys (`plugin:checklist`) only work with the `/api/v1/plugin/*` endpoints, and organisation-owned keys cannot use the Plugin API at all.
 
 ## Need an SDK?
 

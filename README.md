@@ -5,7 +5,7 @@ Official documentation and examples for the Jokelboard Programmatic Board API an
 - Preferred API base URL: `https://api.jokelboard.com/api/v1`
 - Compatibility base URL: `https://jokelboard.com/api/v1`
 - Status: Stable
-- Last updated: May 2026
+- Last updated: June 2026
 
 The Programmatic Board API lets external applications, scripts, CI jobs, and automation agents read and update Jokelboard boards over HTTPS. Requests use bearer API keys and JSON payloads.
 
@@ -14,6 +14,7 @@ The Programmatic Board API lets external applications, scripts, CI jobs, and aut
 ## Table of Contents
 
 - [Overview](#overview)
+- [Quick Start](#quick-start)
 - [Access Requirements](#access-requirements)
 - [Authentication](#authentication)
 - [API Key Reach](#api-key-reach)
@@ -51,6 +52,40 @@ Programmatic Board API operations include:
 - Move cards between lists.
 
 The API is intentionally small and JSON-first so it can be used from curl, any language HTTP client, CI jobs, or low-level integration tooling without an SDK.
+
+---
+
+## Quick Start
+
+1. Mint an API key (see [Managing API Keys](#managing-api-keys)). For a single-board automation, create a **board key** from the board's Automations menu and copy the `jkb_...` secret — it is shown only once.
+2. Verify the key and find your board:
+
+   ```bash
+   export JKB_TOKEN="jkb_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+   curl -sS -H "Authorization: Bearer $JKB_TOKEN" \
+     https://api.jokelboard.com/api/v1/me
+
+   curl -sS -H "Authorization: Bearer $JKB_TOKEN" \
+     https://api.jokelboard.com/api/v1/boards
+   ```
+
+3. Read the board and make your first write, sending the board's current `revision` to guard against concurrent edits:
+
+   ```bash
+   export BOARD_ID="board-abc123"
+
+   REVISION=$(curl -sS -H "Authorization: Bearer $JKB_TOKEN" \
+     "https://api.jokelboard.com/api/v1/boards/$BOARD_ID" | jq -r '.board.revision')
+
+   curl -sS -X POST \
+     -H "Authorization: Bearer $JKB_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d "{\"title\": \"My first API list\", \"revision\": $REVISION}" \
+     "https://api.jokelboard.com/api/v1/boards/$BOARD_ID/lists"
+   ```
+
+Complete runnable scripts live in the [`Examples/`](#examples) directory.
 
 ---
 
@@ -349,7 +384,18 @@ Creates a list at the end of the board.
 }
 ```
 
-Response status: `201 Created`.
+Response status: `201 Created`. The response echoes the created list:
+
+```json
+{
+  "ok": true,
+  "list": {
+    "id": "list-abc",
+    "title": "Backlog",
+    "cards": []
+  }
+}
+```
 
 ### POST /api/v1/boards/:id/cards
 
@@ -389,7 +435,21 @@ Notes:
 - `fieldValues` are applied through `PATCH /boards/:id/cards/:cardId`, not during card creation.
 - `kind: "filler"` creates a minimal filler card with `id`, `kind`, `title`, and `comments`.
 
-Response status: `201 Created`.
+Response status: `201 Created`. The response echoes the created card, including the server-assigned `id` and `ticket`:
+
+```json
+{
+  "ok": true,
+  "card": {
+    "id": "card-9f2c1a",
+    "ticket": "PROD-1842",
+    "title": "Fix login redirect",
+    "categoryId": "P1"
+  }
+}
+```
+
+After any successful write, refetch `GET /api/v1/boards/:id` (or track the response) to obtain the board's new `revision` before the next mutation.
 
 ### PATCH /api/v1/boards/:id/cards/:cardId
 
@@ -426,6 +486,8 @@ Example:
 ```
 
 `fieldValues` are capped to 64 keys. Keys longer than 64 characters are ignored, and values are stored as strings capped to 64 characters. Send `"fieldValues": null` to clear the field values.
+
+The response echoes the updated card under `card`.
 
 ### POST /api/v1/boards/:id/cards/:cardId/comments
 
@@ -494,7 +556,14 @@ Returns only the board/list/card/checklist shape needed by plugin clients.
 
 ### POST /api/v1/plugin/boards/:id/cards/:cardId/checklist-items/:itemId/toggle
 
-Toggles one checklist item.
+Toggles one checklist item. The request needs no body:
+
+```bash
+curl -sS -X POST -H "Authorization: Bearer $JKB_TOKEN" \
+  "https://api.jokelboard.com/api/v1/plugin/boards/$BOARD_ID/cards/$CARD_ID/checklist-items/$ITEM_ID/toggle"
+```
+
+Response:
 
 ```json
 {
@@ -723,6 +792,7 @@ See the [`Examples/`](./Examples) directory:
 - [`node-full-flow.js`](./Examples/node-full-flow.js) - Node.js 18+ flow with conflict retry, card patching, and move
 - [`python-client.py`](./Examples/python-client.py) - Python `requests` client with field value patching and retries
 - [`github-action-sync.yml`](./Examples/github-action-sync.yml) - GitHub Actions issue-to-card workflow
+- [`plugin-checklist.sh`](./Examples/plugin-checklist.sh) - Board Plugin API: access probe, checklist listing, item toggle
 
 ---
 

@@ -1,4 +1,5 @@
 - [Overview](README.md#overview)
+- [Quick Start](README.md#quick-start)
 - [Access Requirements](README.md#access-requirements)
   - [Programmatic Access](README.md#programmatic-access)
   - [Plugin Access](README.md#plugin-access)
@@ -8,7 +9,8 @@
 - [Endpoints Reference](README.md#programmatic-board-api)
   - [GET /me](README.md#get-apiv1me)
   - [Boards](README.md#get-apiv1boards)
-  - [Lists & Cards](README.md#post-apiv1boardsidcards)
+  - [Lists](README.md#post-apiv1boardsidlists)
+  - [Cards](README.md#post-apiv1boardsidcards)
   - [Comments & Move](README.md#post-apiv1boardsidcardscardidcomments)
 - [Board Plugin API](README.md#board-plugin-api)
 - [Data Model](README.md#data-model)
@@ -24,11 +26,12 @@
 
 **Examples**
 
-- [curl-basic.sh](Examples/curl-basic.sh)
-- [node-full-flow.js](Examples/node-full-flow.js)
-- [python-client.py](Examples/python-client.py)
-- [github-action-sync.yml](Examples/github-action-sync.yml)
 - [Examples README](Examples/README.md)
+- [curl-basic.sh](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/curl-basic.sh)
+- [node-full-flow.js](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/node-full-flow.js)
+- [python-client.py](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/python-client.py)
+- [github-action-sync.yml](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/github-action-sync.yml)
+- [plugin-checklist.sh](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/plugin-checklist.sh)
 
 ---
 
