@@ -20,6 +20,7 @@ The Programmatic Board API lets external applications, scripts, CI jobs, and aut
 - [API Key Reach](#api-key-reach)
 - [Managing API Keys](#managing-api-keys)
 - [Programmatic Board API](#programmatic-board-api)
+- [Vault](#vault)
 - [Board Plugin API](#board-plugin-api)
 - [Data Model](#data-model)
 - [Optimistic Concurrency and Revisions](#optimistic-concurrency-and-revisions)
@@ -50,6 +51,7 @@ Programmatic Board API operations include:
 - Patch card fields.
 - Add card comments.
 - Move cards between lists.
+- List, vault, restore, and purge soft-deleted cards.
 
 The API is intentionally small and JSON-first so it can be used from curl, any language HTTP client, CI jobs, or low-level integration tooling without an SDK.
 
@@ -93,7 +95,7 @@ Complete runnable scripts live in the [`Examples/`](#examples) directory.
 
 ### Programmatic Access
 
-Programmatic board access requires the `boards:read` and/or `boards:write` scope and the governing tier must include `apiAccess`.
+Programmatic board access requires the `boards:read` and/or `boards:write` scope and the governing tier must include `apiAccess`. The [Vault](#vault) endpoints additionally require vault access as described in that section.
 
 Personal boards:
 
@@ -139,7 +141,7 @@ Scopes:
 | Scope | Purpose |
 |-------|---------|
 | `boards:read` | `GET /me`, board listing, and full board reads |
-| `boards:write` | Board reads plus writes: replace board, create list/card, patch card, comment, move |
+| `boards:write` | Board reads plus writes: replace board, create list/card, patch card, comment, move, vault/restore/purge |
 | `plugin:checklist` | Board Plugin API checklist read/toggle surface |
 
 Programmatic keys use both `boards:read` and `boards:write`. Plugin keys use `plugin:checklist`. A `boards:write` key can also call the plugin checklist endpoints for the same reachable board.
@@ -520,6 +522,152 @@ Moves a card to another list, or reorders it within a list.
 
 ---
 
+## Vault
+
+Each board list may hold a per-list **vault**: the `vaultedCards` array stores soft-deleted cards that remain recoverable until purged. The four vault endpoints below require normal board authorization **and** separate **vault access** on top of view/edit rights. A principal who can read or write the board but lacks vault access receives `403` with `vault_access_required`.
+
+On personal boards, vault access is the board owner. On organisation boards, vault access is granted by the `VAULT_ACCESS` organisation permission, a matching per-board vault ACL entry, or owner/admin/`MANAGE_BOARDS` roles. For `kind: "org"` API keys, vault access is evaluated against the **key creator's** vault access, not the key record alone.
+
+Whole-board `PUT` can still persist `vaultedCards` for clients that manage the full board payload, but these granular endpoints are the recommended programmatic path.
+
+### GET /api/v1/boards/:id/vault
+
+Lists vaulted cards grouped by the list they were deleted from. Only lists with at least one vaulted card appear.
+
+Requires scope: `boards:read` and vault access.
+
+```json
+{
+  "vault": [
+    {
+      "listId": "todo",
+      "listTitle": "Todo",
+      "cards": [
+        {
+          "id": "v1",
+          "title": "Old task",
+          "vaultedAt": 1715000000000,
+          "vaultedBy": "roblox-123"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Errors:
+
+- `403` `vault_access_required` — token can view the board but lacks vault access
+
+### POST /api/v1/boards/:id/cards/:cardId/vault
+
+Soft-deletes a **live** card into its list's vault. The server stamps `vaultedAt` (milliseconds since epoch) and `vaultedBy` (actor sub) on the card and **prepends** it to that list's `vaultedCards` (newest first).
+
+Requires scope: `boards:write` and vault access.
+
+Optional body:
+
+```json
+{
+  "revision": 1714990000000
+}
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "board": { "id": "board-abc123", "revision": 1715012345678, "data": { "lists": [] } },
+  "card": {
+    "id": "v1",
+    "title": "Old task",
+    "vaultedAt": 1715000000000,
+    "vaultedBy": "roblox-123"
+  },
+  "listId": "todo"
+}
+```
+
+Notes:
+
+- Vaulting removes the card from the live list, so it does not trip the card-creation burst guard.
+- `404` `card_not_found` — `:cardId` is not a live card on the board
+- `403` `vault_access_required`
+- `409` `revision_conflict`
+
+### POST /api/v1/boards/:id/cards/:cardId/restore
+
+Restores a **vaulted** card to a live list. `vaultedAt` and `vaultedBy` are stripped. By default the card returns to the list it was vaulted in, appended at the end.
+
+Requires scope: `boards:write` and vault access.
+
+Optional body:
+
+```json
+{
+  "toListId": "in-progress",
+  "position": 3,
+  "revision": 1714990000000
+}
+```
+
+- `toListId` — restore into another list (`404` `list_not_found` if missing)
+- `position` — integer index, clamped to `0..list.length`
+
+Response:
+
+```json
+{
+  "ok": true,
+  "board": { "id": "board-abc123", "revision": 1715012345678, "data": { "lists": [] } },
+  "card": { "id": "v1", "title": "Old task" },
+  "listId": "todo",
+  "position": 3
+}
+```
+
+Notes:
+
+- Restoring adds one live card and counts toward the card-creation burst guard (10 cards / 5 seconds per user and board).
+- Moving between live and vaulted arrays does not change total card count on the board, so restore alone does not exceed the plan card cap.
+- `404` `card_not_found` — `:cardId` is not in the vault
+- `404` `list_not_found`
+- `403` `vault_access_required`
+- `409` `revision_conflict`
+
+### DELETE /api/v1/boards/:id/vault/:cardId
+
+Permanently deletes (purges) a vaulted card. **Irreversible.**
+
+Requires scope: `boards:write` and vault access.
+
+Accepts optional `revision` in the JSON body **or** as a `?revision=` query parameter (for clients that cannot send a `DELETE` body):
+
+```http
+DELETE /api/v1/boards/:id/vault/:cardId?revision=1714990000000
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "board": { "id": "board-abc123", "revision": 1715012345678, "data": { "lists": [] } },
+  "cardId": "v1",
+  "purged": true
+}
+```
+
+Errors:
+
+- `404` `card_not_found` — card is not in the vault
+- `403` `vault_access_required`
+- `409` `revision_conflict`
+
+
+---
+
 ## Board Plugin API
 
 The Board Plugin API uses bearer auth and either `plugin:checklist` or `boards:write` scope.
@@ -617,8 +765,11 @@ interface BoardList {
   id: string;
   title: string;
   cards: BoardCard[];
+  vaultedCards?: BoardCard[]; // soft-deleted cards, see Vault
 }
 ```
+
+Soft-deleted cards live in each list's `vaultedCards` array rather than a single board-wide trash. Deleting a list removes that list and its vault together.
 
 ### BoardCard
 
@@ -650,6 +801,8 @@ interface BoardCard {
   due?: { iso?: string; in?: string; overdue?: boolean } | null;
   image?: { data: string; w: number; h: number; bytes: number } | null;
   components?: Record<string, boolean>;
+  vaultedAt?: number; // set only while the card is in vaultedCards
+  vaultedBy?: string | null; // set only while the card is in vaultedCards
 }
 ```
 
@@ -677,8 +830,11 @@ All mutating Programmatic Board API endpoints accept an optional `revision` fiel
 - `PATCH /boards/:id/cards/:cardId`
 - `POST /boards/:id/cards/:cardId/comments`
 - `POST /boards/:id/cards/:cardId/move`
+- `POST /boards/:id/cards/:cardId/vault`
+- `POST /boards/:id/cards/:cardId/restore`
+- `DELETE /boards/:id/vault/:cardId`
 
-If supplied, `revision` must equal the board's current `updated_at` value. A mismatch returns:
+If supplied, `revision` must equal the board's current `updated_at` value. `DELETE /boards/:id/vault/:cardId` also accepts `revision` as a `?revision=` query parameter when a request body is impractical. A mismatch returns:
 
 ```json
 {
@@ -752,6 +908,7 @@ Common codes:
 | `org_scope_violation` | 403 | Org key used outside its organisation |
 | `plugin_not_supported_for_org_tokens` | 403 | Org key used on plugin endpoint |
 | `forbidden` | 403 | User cannot access the board |
+| `vault_access_required` | 403 | Token can view or edit the board but lacks vault access |
 | `not_found` | 404 | Board or token not found |
 | `list_not_found` | 404 | List not found |
 | `card_not_found` | 404 | Card not found |
@@ -775,6 +932,7 @@ Common codes:
 On organisation and sub-organisation boards:
 
 - Programmatic mutations are recorded in the board audit log.
+- Vault, restore, and purge are audit-logged as `card.vaulted`, `card.restored`, and `card.purged`.
 - The actor is the API key owner for profile and board keys.
 - Organisation key creation and revocation are recorded in the organisation audit log.
 - Comment mentions (`@username`) create notification rows for matching org members who can view the board.
@@ -789,6 +947,7 @@ Personal boards do not write organisation audit entries.
 See the [`Examples/`](./Examples) directory:
 
 - [`curl-basic.sh`](./Examples/curl-basic.sh) - minimal auth, board fetch, list/card/comment flow
+- [`vault-flow.sh`](./Examples/vault-flow.sh) - list, vault, restore, and purge soft-deleted cards
 - [`node-full-flow.js`](./Examples/node-full-flow.js) - Node.js 18+ flow with conflict retry, card patching, and move
 - [`python-client.py`](./Examples/python-client.py) - Python `requests` client with field value patching and retries
 - [`github-action-sync.yml`](./Examples/github-action-sync.yml) - GitHub Actions issue-to-card workflow
