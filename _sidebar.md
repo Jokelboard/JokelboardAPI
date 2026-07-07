@@ -12,6 +12,7 @@
   - [Lists](README.md#post-apiv1boardsidlists)
   - [Cards](README.md#post-apiv1boardsidcards)
   - [Comments & Move](README.md#post-apiv1boardsidcardscardidcomments)
+  - [Vault](README.md#vault)
 - [Board Plugin API](README.md#board-plugin-api)
 - [Data Model](README.md#data-model)
 - [Revisions & Concurrency](README.md#optimistic-concurrency-and-revisions)
@@ -28,6 +29,7 @@
 
 - [Examples README](Examples/README.md)
 - [curl-basic.sh](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/curl-basic.sh)
+- [vault-flow.sh](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/vault-flow.sh)
 - [node-full-flow.js](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/node-full-flow.js)
 - [python-client.py](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/python-client.py)
 - [github-action-sync.yml](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/github-action-sync.yml)

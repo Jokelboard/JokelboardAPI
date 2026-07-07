@@ -25,6 +25,7 @@ All examples are **self-contained** — they use only standard library HTTP clie
 | File                        | Language / Tool          | What it demonstrates                              | Requirements          |
 |-----------------------------|--------------------------|---------------------------------------------------|-----------------------|
 | `curl-basic.sh`             | bash + curl + jq         | Auth check, list boards, create list+card+comment | curl, jq, bash        |
+| `vault-flow.sh`             | bash + curl + jq         | List, vault, restore, and purge soft-deleted cards | curl, jq, bash        |
 | `node-full-flow.js`         | Node.js 18+ (native fetch) | Full flow with revision retry, PATCH, MOVE, bulk import | Node 18+             |
 | `python-client.py`          | Python 3 + requests      | CSV-style import, fieldValues + descriptionMode=fields, 409 handling | `pip install requests` |
 | `github-action-sync.yml`    | GitHub Actions           | React to `issues` webhooks and create cards automatically | A GitHub repo with Actions + two secrets |
