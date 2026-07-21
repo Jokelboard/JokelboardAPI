@@ -495,7 +495,7 @@ Notes:
 - `severity` is still accepted as a legacy alias and is normalized into `categoryId`.
 - `ticket` is generated server-side if omitted.
 - `id` may be supplied; otherwise the server generates a card id.
-- `createdAt` is server-stamped at creation (Unix epoch milliseconds) and cannot be supplied by the client — implausible values are replaced or dropped at save time.
+- `createdAt` is stamped by the server at creation (Unix epoch milliseconds); any `createdAt` in the create request body is ignored.
 - `fieldValues` are applied through `PATCH /boards/:id/cards/:cardId`, not during card creation.
 - If `assignees` is omitted or normalises to an empty list, a human-owned key defaults to the key owner's user id. A bot-configured organisation key instead defaults to `[]`; send explicit assignees when the bot should assign the card.
 - `kind: "filler"` creates a minimal filler card with `id`, `kind`, `title`, and `comments`.
@@ -875,7 +875,7 @@ interface BoardCard {
 
 `botTokenId` and `botOrgId` are read-only provenance fields. The server stamps them only on new comments written by a configured organisation bot key, strips forged stamps, and prevents later writes from changing an existing bot-stamped comment's identity.
 
-`createdAt` is the card's creation time in Unix epoch milliseconds. It is server-owned: stamped when the card is created (board UI or `POST /boards/:id/cards`), and implausible client-supplied values are replaced or dropped at save time. Cards created before the field existed have their timestamp recovered from the card id encoding where possible — both on API reads and via a persistent backfill on the board's next save. A card whose creation time is genuinely unknown omits the field; the API never fabricates a date.
+`createdAt` is the card's creation time in Unix epoch milliseconds. `POST /boards/:id/cards` stamps it and ignores any value in the request body. Whole-board saves (`PUT /boards/:id`) validate it instead: a plausible value is preserved (the board UI stamps cards at creation and round-trips it through saves), while implausible values are replaced from the card id encoding or dropped. Cards created before the field existed have their timestamp recovered from the card id encoding where possible — both on API reads and via a persistent backfill on the board's next save. A card whose creation time is genuinely unknown omits the field; the API never fabricates a date.
 
 Validation highlights:
 
