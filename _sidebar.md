@@ -6,6 +6,7 @@
 - [Authentication](README.md#authentication)
   - [API Key Reach](README.md#api-key-reach)
   - [Managing API Keys](README.md#managing-api-keys)
+  - [Official Bot Accounts](README.md#official-bot-accounts)
 - [Endpoints Reference](README.md#programmatic-board-api)
   - [GET /me](README.md#get-apiv1me)
   - [Boards](README.md#get-apiv1boards)

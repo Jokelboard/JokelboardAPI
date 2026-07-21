@@ -87,7 +87,10 @@ async function main() {
 
   // 1. Verify identity
   const me = await api('/me');
-  console.log(`Authenticated as ${me.user.username} (${me.user.tier}) via token "${me.token.name}"`);
+  const actor = me.token.bot
+    ? `${me.token.bot.name} (official bot; key creator: ${me.user.username})`
+    : me.user.username;
+  console.log(`Authenticated as ${actor} (${me.user.tier}) via token "${me.token.name}"`);
   console.log(`Token scopes: ${me.token.scopes.join(', ')}\n`);
 
   // 2. Get current board state
@@ -114,7 +117,8 @@ async function main() {
       description: item.description || '',
       descriptionMode: 'plain',
       labels: [{ name: 'ci', color: '#ff9f1c' }],
-      assignees: [me.user.sub],
+      // Official bot keys default to unassigned cards; human keys self-assign.
+      ...(me.token.bot ? {} : { assignees: [me.user.sub] }),
     };
     const { card } = await createCardWithRevision(ciList.id, payload, board.revision);
     createdCards.push(card);

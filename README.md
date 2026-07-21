@@ -5,7 +5,7 @@ Official documentation and examples for the Jokelboard Programmatic Board API an
 - Preferred API base URL: `https://api.jokelboard.com/api/v1`
 - Compatibility base URL: `https://jokelboard.com/api/v1`
 - Status: Stable
-- Last updated: June 2026
+- Last updated: July 2026
 
 The Programmatic Board API lets external applications, scripts, CI jobs, and automation agents read and update Jokelboard boards over HTTPS. Requests use bearer API keys and JSON payloads.
 
@@ -19,6 +19,7 @@ The Programmatic Board API lets external applications, scripts, CI jobs, and aut
 - [Authentication](#authentication)
 - [API Key Reach](#api-key-reach)
 - [Managing API Keys](#managing-api-keys)
+- [Official Bot Accounts](#official-bot-accounts)
 - [Programmatic Board API](#programmatic-board-api)
 - [Vault](#vault)
 - [Board Plugin API](#board-plugin-api)
@@ -37,7 +38,7 @@ The Programmatic Board API lets external applications, scripts, CI jobs, and aut
 
 The current API has three related surfaces:
 
-1. Session-authenticated key management endpoints for creating, listing, and revoking API keys.
+1. Session-authenticated key management endpoints for creating, listing, revoking, and configuring API keys.
 2. Bearer-authenticated `/api/v1/*` Programmatic Board API endpoints for board, list, card, comment, and move operations.
 3. Bearer-authenticated `/api/v1/plugin/*` endpoints for the smaller Board Plugin API checklist surface.
 
@@ -52,6 +53,8 @@ Programmatic Board API operations include:
 - Add card comments.
 - Move cards between lists.
 - List, vault, restore, and purge soft-deleted cards.
+
+Organisation-owned keys can optionally carry an [official bot identity](#official-bot-accounts). This changes how the key is presented in comments and audit logs without changing its bearer token, scopes, reach, or underlying human accountability.
 
 The API is intentionally small and JSON-first so it can be used from curl, any language HTTP client, CI jobs, or low-level integration tooling without an SDK.
 
@@ -106,7 +109,7 @@ Organisation boards:
 
 - The organisation tier must be one of `FL_PRO`, `BUSINESS`, `SME_BUSINESS`, or `ENTERPRISE`.
 - Human users minting or using board-scoped keys on org boards must have the `USE_BOARD_API` organisation permission.
-- Organisation-owned keys require the `CREATE_ORG_API_KEYS` permission to list, mint, or revoke. Once minted, an organisation-owned key is the credential and can operate across that organisation's boards until revoked.
+- Organisation-owned keys require the `CREATE_ORG_API_KEYS` permission to list, mint, revoke, or configure as an official bot. Once minted, an organisation-owned key is the credential and can operate across that organisation's boards until revoked.
 
 ### Plugin Access
 
@@ -173,7 +176,7 @@ Legacy, pre-v2 API keys were not reach-bound. They were migrated to the v2 schem
 
 ## Managing API Keys
 
-Key management endpoints use the logged-in web session, not bearer token auth. Creation endpoints also require fresh authentication.
+Key management endpoints use the logged-in web session, not bearer token auth. Creation and bot-configuration endpoints also require fresh authentication and the normal session CSRF protection.
 
 ### Board Keys
 
@@ -226,17 +229,69 @@ Organisation keys are owned by the organisation and require `CREATE_ORG_API_KEYS
 GET    /api/organisations/:id/tokens
 POST   /api/organisations/:id/tokens
 DELETE /api/organisations/:id/tokens/:tokenId
+PATCH  /api/organisations/:id/tokens/:tokenId/bot
+GET    /api/organisations/:id/tokens/:tokenId/bot-avatar
 ```
 
 Create request:
 
 ```json
 {
-  "name": "Org-wide automation"
+  "name": "GitHub issue sync"
 }
 ```
 
+The key name is required. After trimming, `default key` and `organisation api key` are reserved case-insensitively; rejected names return `400 name_required` or `400 name_reserved`. Existing keys with legacy names remain valid.
+
 Organisation keys are always Programmatic Board API keys. They cannot be plugin-only keys.
+
+### Official Bot Accounts
+
+An organisation key may be configured with an official bot identity from the organisation's **API Keys** tab or through the session-authenticated bot endpoint. This is optional metadata on a `kind: "org"` key, not a separate key kind or authentication scheme. It does not grant any additional permissions, scopes, board reach, or Plugin API access.
+
+Configuring or renaming a bot requires `CREATE_ORG_API_KEYS`, fresh web authentication, session CSRF protection, and an organisation tier with `apiAccess`. Revoked keys return `404 not_found`.
+
+```http
+PATCH /api/organisations/:id/tokens/:tokenId/bot
+Content-Type: application/json
+```
+
+```json
+{
+  "name": "GitHub Sync",
+  "avatar": "data:image/webp;base64,UklGR..."
+}
+```
+
+Configuration rules:
+
+- `name` is sanitised plain text and must contain at least one character. It is truncated to 32 characters.
+- `avatar` is optional. When present it must be a non-empty `data:image/webp;base64,...` value whose decoded payload is at most 16 KiB.
+- Omitting `avatar` preserves the current image. Sending `"avatar": null` removes only the image.
+- Sending `"name": null` removes the entire bot identity. Clearing remains available after an organisation loses API access so administrators can clean up a downgraded account.
+
+Successful configuration returns:
+
+```json
+{
+  "ok": true,
+  "bot": {
+    "name": "GitHub Sync",
+    "avatarUrl": "/api/organisations/org-abc/tokens/tok-abc/bot-avatar"
+  }
+}
+```
+
+Removing the bot returns `{ "ok": true, "bot": null }`. Token inventory responses and `GET /api/v1/me` expose the same `bot` object, or `null` when the key has no bot identity. The `user` object returned by `GET /api/v1/me` deliberately remains the human key creator for authorization and accountability.
+
+The avatar URL uses the logged-in web session rather than bearer-token auth. It is visible to members of the organisation or its parent enterprise, returns `image/webp`, supports `ETag`/`If-None-Match`, and is cached privately for up to 300 seconds. A missing avatar returns `404`; an unrelated user receives `403`.
+
+When a configured bot uses the Programmatic Board API:
+
+- New comments are stamped with the bot name and server-owned bot identifiers and render with a `BOT` badge.
+- Audit entries render the bot as `actor_bot` while retaining the human key creator underneath for accountability.
+- New cards default to no assignees when `assignees` is omitted; explicit assignees are still honoured.
+- Organisation-key restrictions are unchanged, including no access to the Board Plugin API.
 
 ### Create Response
 
@@ -256,10 +311,13 @@ All create endpoints return the raw token once:
     "orgId": null,
     "createdBySub": null,
     "created_at": 1715000000000,
-    "last_used_at": null
+    "last_used_at": null,
+    "bot": null
   }
 }
 ```
+
+Every public token row includes `bot`. It is `{ "name": string, "avatarUrl": string | null }` only for a configured organisation key and `null` for every other key.
 
 ### Legacy `/api/tokens`
 
@@ -300,10 +358,13 @@ Returns the token owner and token metadata.
     "orgId": null,
     "createdBySub": null,
     "created_at": 1715000000000,
-    "last_used_at": 1715012345678
+    "last_used_at": 1715012345678,
+    "bot": null
   }
 }
 ```
+
+For a configured organisation key, `token.bot` contains its official `{ name, avatarUrl }` identity. `user` still describes the human key creator.
 
 ### GET /api/v1/boards
 
@@ -435,6 +496,7 @@ Notes:
 - `ticket` is generated server-side if omitted.
 - `id` may be supplied; otherwise the server generates a card id.
 - `fieldValues` are applied through `PATCH /boards/:id/cards/:cardId`, not during card creation.
+- If `assignees` is omitted or normalises to an empty list, a human-owned key defaults to the key owner's user id. A bot-configured organisation key instead defaults to `[]`; send explicit assignees when the bot should assign the card.
 - `kind: "filler"` creates a minimal filler card with `id`, `kind`, `title`, and `comments`.
 
 Response status: `201 Created`. The response echoes the created card, including the server-assigned `id` and `ticket`:
@@ -493,7 +555,7 @@ The response echoes the updated card under `card`.
 
 ### POST /api/v1/boards/:id/cards/:cardId/comments
 
-Adds a comment to a card. The author is the API key owner.
+Adds a comment to a card. Board and profile keys use the API key owner as the author. A bot-configured organisation key uses its official bot name and receives server-owned bot identity fields.
 
 ```json
 {
@@ -502,9 +564,9 @@ Adds a comment to a card. The author is the API key owner.
 }
 ```
 
-Regular comments are capped at 3,000 characters. A request with `"kind": "docucomment"` creates a longer document-style comment capped at 15,000 characters.
+Regular comments are capped at 3,000 characters. A request with `"kind": "docucomment"` creates a longer document-style comment capped at 15,000 characters. Bot identity is assigned by the server; client-supplied `botTokenId` and `botOrgId` values cannot forge or replace a bot stamp.
 
-On organisation boards, `@username` mentions create in-app mention notifications for matching org members who can view the board.
+On organisation boards, `@username` mentions create in-app mention notifications for matching org members who can view the board. For a configured bot key, the notification names the bot while retaining the human key creator's user id for accountability.
 
 ### POST /api/v1/boards/:id/cards/:cardId/move
 
@@ -789,7 +851,9 @@ interface BoardCard {
   comments?: Array<{
     id: string;
     author: string;
-    authorSub: string;
+    authorSub?: string; // human-authored comment
+    botTokenId?: string; // server-stamped official bot key
+    botOrgId?: string; // organisation that owns the bot key
     text: string;
     ts: number;
     kind?: 'docucomment' | 'comment';
@@ -805,6 +869,8 @@ interface BoardCard {
   vaultedBy?: string | null; // set only while the card is in vaultedCards
 }
 ```
+
+`botTokenId` and `botOrgId` are read-only provenance fields. The server stamps them only on new comments written by a configured organisation bot key, strips forged stamps, and prevents later writes from changing an existing bot-stamped comment's identity.
 
 Validation highlights:
 
@@ -922,6 +988,9 @@ Common codes:
 | `invalid_card_patch` | 400 | Card patch payload failed validation |
 | `invalid_type` | 400 | Token creation type was not `programmatic` or `plugin` |
 | `name_required` | 400 | Token/list/card name or title was empty after sanitisation |
+| `name_reserved` | 400 | Organisation key name matched a reserved default name |
+| `bot_name_invalid` | 400 | Bot name was missing or empty after sanitisation |
+| `avatar_invalid` | 400 | Bot avatar was not a valid non-empty WebP data URL within the 16 KiB limit |
 | `text_required` | 400 | Comment text was empty or rejected |
 | `gone` | 410 | Legacy `POST /api/tokens` or `DELETE /api/tokens/:id` was called |
 
@@ -933,9 +1002,12 @@ On organisation and sub-organisation boards:
 
 - Programmatic mutations are recorded in the board audit log.
 - Vault, restore, and purge are audit-logged as `card.vaulted`, `card.restored`, and `card.purged`.
-- The actor is the API key owner for profile and board keys.
-- Organisation key creation and revocation are recorded in the organisation audit log.
-- Comment mentions (`@username`) create notification rows for matching org members who can view the board.
+- Profile and board keys render the human API key owner as the actor.
+- A configured organisation bot key renders an `actor_bot` object with `{ name, avatarUrl }` in board, organisation, and enterprise audit reads. The underlying `actor_sub`/`actor_username` remains present for human accountability.
+- Audit bot identity is resolved at read time: configuring or renaming a bot changes how that key's older entries render. Revoking a configured key does not erase its historical bot attribution.
+- Organisation key creation, revocation, bot update, and bot removal are recorded in the organisation audit log.
+- New comments written by a configured bot key are stamped with the bot name and show a `BOT` badge. Bot stamps are server-owned and cannot be forged through whole-board writes.
+- Comment mentions (`@username`) create notification rows for matching org members who can view the board. Bot-authored notifications show the bot name while retaining the human creator's user id.
 - Plugin checklist toggles on org boards are also audit logged.
 
 Personal boards do not write organisation audit entries.
@@ -964,6 +1036,7 @@ See the [`Examples/`](./Examples) directory:
 5. Watch `last_used_at` in token lists.
 6. Use HTTPS only.
 7. Scan logs and `.env` files for the `jkb_` prefix before sharing them.
+8. Give each organisation automation a descriptive key name and, when it acts publicly, a distinct bot identity so audit attribution stays legible.
 
 ---
 
