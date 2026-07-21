@@ -42,6 +42,7 @@ All examples are **self-contained** — they use only standard library HTTP clie
 - Use the narrowest key reach that works: board key before profile or organisation key.
 - Use `categoryId` for the card category. `severity` is still accepted as a legacy alias.
 - Set custom `fieldValues` with `PATCH /api/v1/boards/:id/cards/:cardId`; card creation does not apply them. Values are stored as strings (max 64 characters each, 64 keys per card).
+- Set `dateType` to `due` for deadlines, `static` for neutral dates, or `employee` with `dueJoin`/`dueDepart` for employment dates. Switching modes preserves the other stored dates.
 - The `ticket` field on cards is a short human-friendly identifier (e.g. `PROD-1842`). It is generated server-side if you omit it.
 - Plugin keys (`plugin:checklist`) only work with the `/api/v1/plugin/*` endpoints, and organisation-owned keys cannot use the Plugin API at all.
 
