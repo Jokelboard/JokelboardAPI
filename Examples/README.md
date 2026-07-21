@@ -10,15 +10,16 @@ All examples are **self-contained** — they use only standard library HTTP clie
    - Board key: board **Automations** menu, or `POST /api/v1/boards/:id/tokens`
    - Profile key: **User Settings -> Security -> API Keys**, or `POST /api/me/tokens`
    - Organisation key: organisation **API Keys** tab, or `POST /api/organisations/:id/tokens`
-2. Copy the secret **immediately** — it is shown only once.
-3. Export the token and a board ID:
+2. For an organisation automation that should appear as an official bot, configure the key from the **API Keys** tab or `PATCH /api/organisations/:id/tokens/:tokenId/bot`. This changes attribution, not scopes or reach.
+3. Copy the secret **immediately** — it is shown only once.
+4. Export the token and a board ID:
 
    ```bash
    export JKB_TOKEN="jkb_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
    export BOARD_ID="board-abc123def456"
    ```
 
-4. Run the example of your choice.
+5. Run the example of your choice.
 
 ## Examples
 
@@ -26,7 +27,7 @@ All examples are **self-contained** — they use only standard library HTTP clie
 |-----------------------------|--------------------------|---------------------------------------------------|-----------------------|
 | `curl-basic.sh`             | bash + curl + jq         | Auth check, list boards, create list+card+comment | curl, jq, bash        |
 | `vault-flow.sh`             | bash + curl + jq         | List, vault, restore, and purge soft-deleted cards | curl, jq, bash        |
-| `node-full-flow.js`         | Node.js 18+ (native fetch) | Full flow with revision retry, PATCH, MOVE, bulk import | Node 18+             |
+| `node-full-flow.js`         | Node.js 18+ (native fetch) | Bot-aware identity, revision retry, PATCH, MOVE, bulk import | Node 18+             |
 | `python-client.py`          | Python 3 + requests      | CSV-style import, fieldValues + descriptionMode=fields, 409 handling | `pip install requests` |
 | `github-action-sync.yml`    | GitHub Actions           | React to `issues` webhooks and create cards automatically | A GitHub repo with Actions + two secrets |
 | `plugin-checklist.sh`       | bash + curl + jq         | Board Plugin API: access probe, checklist summary, item toggle | curl, jq, bash, `plugin:checklist` key |
@@ -35,7 +36,9 @@ All examples are **self-contained** — they use only standard library HTTP clie
 
 - Always send the latest `revision` on mutating calls to avoid 409s.
 - Handle `429 card_rate_limited` with the `retryAfter` value.
-- On organisation boards, every write appears in the audit log.
+- On organisation boards, every write appears in the audit log. A configured organisation bot key appears as `actor_bot`, while the human key creator remains attached for accountability.
+- `GET /api/v1/me` keeps the human creator in `user` and exposes the optional official identity in `token.bot`.
+- Bot-authored comments are server-stamped with the bot identity. Cards created without `assignees` default to unassigned for bot keys.
 - Use the narrowest key reach that works: board key before profile or organisation key.
 - Use `categoryId` for the card category. `severity` is still accepted as a legacy alias.
 - Set custom `fieldValues` with `PATCH /api/v1/boards/:id/cards/:cardId`; card creation does not apply them. Values are stored as strings (max 64 characters each, 64 keys per card).
