@@ -495,6 +495,7 @@ Notes:
 - `severity` is still accepted as a legacy alias and is normalized into `categoryId`.
 - `ticket` is generated server-side if omitted.
 - `id` may be supplied; otherwise the server generates a card id.
+- `createdAt` is server-stamped at creation (Unix epoch milliseconds) and cannot be supplied by the client — implausible values are replaced or dropped at save time.
 - `fieldValues` are applied through `PATCH /boards/:id/cards/:cardId`, not during card creation.
 - If `assignees` is omitted or normalises to an empty list, a human-owned key defaults to the key owner's user id. A bot-configured organisation key instead defaults to `[]`; send explicit assignees when the bot should assign the card.
 - `kind: "filler"` creates a minimal filler card with `id`, `kind`, `title`, and `comments`.
@@ -507,6 +508,7 @@ Response status: `201 Created`. The response echoes the created card, including 
   "card": {
     "id": "card-9f2c1a",
     "ticket": "PROD-1842",
+    "createdAt": 1784620424303,
     "title": "Fix login redirect",
     "categoryId": "P1"
   }
@@ -840,6 +842,7 @@ interface BoardCard {
   id: string;
   kind?: 'filler' | string;
   ticket?: string;
+  createdAt?: number; // Unix epoch ms, server-stamped at creation (see below)
   title: string;
   categoryId?: string;
   severity?: string; // legacy fallback only
@@ -871,6 +874,8 @@ interface BoardCard {
 ```
 
 `botTokenId` and `botOrgId` are read-only provenance fields. The server stamps them only on new comments written by a configured organisation bot key, strips forged stamps, and prevents later writes from changing an existing bot-stamped comment's identity.
+
+`createdAt` is the card's creation time in Unix epoch milliseconds. It is server-owned: stamped when the card is created (board UI or `POST /boards/:id/cards`), and implausible client-supplied values are replaced or dropped at save time. Cards created before the field existed have their timestamp recovered from the card id encoding where possible — both on API reads and via a persistent backfill on the board's next save. A card whose creation time is genuinely unknown omits the field; the API never fabricates a date.
 
 Validation highlights:
 
