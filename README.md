@@ -52,6 +52,7 @@ Programmatic Board API operations include:
 - Patch card fields.
 - Add card comments.
 - Move cards between lists.
+- Resolve a card's shareable web URL.
 - List, vault, restore, and purge soft-deleted cards.
 
 Organisation-owned keys can optionally carry an [official bot identity](#official-bot-accounts). This changes how the key is presented in comments and audit logs without changing its bearer token, scopes, reach, or underlying human accountability.
@@ -583,6 +584,44 @@ Moves a card to another list, or reorders it within a list.
 ```
 
 `position: 0` means top of the target list. Omit `position`, or send a value larger than the target list length, to place the card at the bottom.
+
+### GET /api/v1/boards/:id/cards/:cardId/link
+
+Returns the card's shareable web URL — the same link the board UI's **Share** button copies. Opening it in a browser loads the board and opens that card's detail modal.
+
+Requires scope: `boards:read`.
+
+```bash
+curl -H "Authorization: Bearer $JOKELBOARD_TOKEN" \
+  https://api.jokelboard.com/api/v1/boards/$BOARD_ID/cards/taiga-us-213/link
+```
+
+Response:
+
+```json
+{
+  "cardId": "taiga-us-213",
+  "listId": "list-todo",
+  "boardId": "board-a1b2c3",
+  "canonical": true,
+  "path": "/aegis/aia/management-board?card=taiga-us-213",
+  "url": "https://jokelboard.com/aegis/aia/management-board?card=taiga-us-213"
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `url` | Absolute browser URL on the Jokelboard web app. This is the value to hand to end users. |
+| `path` | The same link as an origin-relative path. |
+| `canonical` | `true` when the board lives in an enterprise sub-organisation and the link uses its canonical `/<enterprise>/<sub-org>/<board-slug>` form; `false` when the link uses the `/board/<id>` fallback (personal and legacy organisation boards). |
+| `cardId` / `listId` / `boardId` | The card, the list it currently sits in, and the board the link resolves through. |
+
+Notes:
+
+- `url` always points at the Jokelboard **web app** origin, never `api.jokelboard.com`.
+- Only **live** cards resolve. A vaulted (soft-deleted) card returns `404` with `card_not_found`, exactly like an unknown card id — restore it first if you need a link.
+- Whether the visitor can actually open the link is decided by the board's own access rules at click time; the endpoint does not mint any extra access.
+- Canonical enterprise links can change when the board's slug is edited, the board is transferred, or its sub-organisation is renamed. Re-fetch the link when you need it instead of caching it long-term.
 
 ---
 

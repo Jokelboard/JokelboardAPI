@@ -13,6 +13,7 @@
   - [Lists](README.md#post-apiv1boardsidlists)
   - [Cards](README.md#post-apiv1boardsidcards)
   - [Comments & Move](README.md#post-apiv1boardsidcardscardidcomments)
+  - [Card Link](README.md#get-apiv1boardsidcardscardidlink)
   - [Vault](README.md#vault)
 - [Board Plugin API](README.md#board-plugin-api)
 - [Data Model](README.md#data-model)
