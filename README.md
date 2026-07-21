@@ -472,6 +472,8 @@ Creates a card in an existing list.
   "categoryId": "P1",
   "description": "Users on mobile get sent to the wrong domain.",
   "descriptionMode": "markdown",
+  "descriptionSize": "large",
+  "dateType": "due",
   "labels": [
     { "name": "bug", "color": "#ff5e5e" }
   ],
@@ -501,6 +503,14 @@ Notes:
 - If `assignees` is omitted or normalises to an empty list, a human-owned key defaults to the key owner's user id. A bot-configured organisation key instead defaults to `[]`; send explicit assignees when the bot should assign the card.
 - `kind: "filler"` creates a minimal filler card with `id`, `kind`, `title`, and `comments`.
 
+Card configuration can be set at creation with `descriptionSize`, `dateType`, `due`, `dueJoin`, and `dueDepart`. The date modes are:
+
+- `due` (default) — `due` is a deadline and receives the normal due-soon/overdue treatment.
+- `static` — `due` is displayed as a neutral calendar date without overdue semantics.
+- `employee` — `dueJoin` and `dueDepart` are displayed as neutral join/depart dates. Either date may be omitted.
+
+All date fields use `{ "iso": "<ISO-8601 timestamp>" }` or `null`. The three stored dates are independent: changing `dateType` does not discard dates from the other modes, so an integration can switch modes without losing them. Employee cards do not use a preserved `due` value for due-date search or overdue matching.
+
 Response status: `201 Created`. The response echoes the created card, including the server-assigned `id` and `ticket`:
 
 ```json
@@ -527,12 +537,16 @@ Patchable fields:
 - `title`
 - `description`
 - `descriptionMode`
+- `descriptionSize`
 - `fieldValues`
 - `categoryId`
 - `severity` as a legacy alias for `categoryId`
 - `labels`
 - `assignees`
+- `dateType`
 - `due`
+- `dueJoin`
+- `dueDepart`
 - `checklist`
 - `attachments`
 
@@ -547,12 +561,16 @@ Example:
     "owner-team": "platform",
     "ready-for-review": "true"
   },
-  "due": null,
+  "dateType": "employee",
+  "dueJoin": { "iso": "2026-08-03T09:00:00Z" },
+  "dueDepart": { "iso": "2027-08-03T17:00:00Z" },
   "revision": 1714990000000
 }
 ```
 
 `fieldValues` are capped to 64 keys. Keys longer than 64 characters are ignored, and values are stored as strings capped to 64 characters. Send `"fieldValues": null` to clear the field values.
+
+`descriptionSize` accepts `small`, `normal`, or `large`; `normal` is the default. `dateType` accepts `due`, `static`, or `employee`; `due` is the default. The API represents both defaults by omitting the corresponding property from stored card responses. Send the default value (or `null`) to reset a custom configuration. Send `null` for `due`, `dueJoin`, or `dueDepart` to clear that date.
 
 The response echoes the updated card under `card`.
 
@@ -887,6 +905,7 @@ interface BoardCard {
   severity?: string; // legacy fallback only
   description?: string;
   descriptionMode?: 'plain' | 'markdown' | 'fields';
+  descriptionSize?: 'small' | 'large'; // omitted means normal
   fieldValues?: Record<string, string>;
   labels?: Array<{ id?: string; name: string; color?: string; twoTone?: boolean; borderColor?: string }>;
   assignees?: string[];
@@ -905,6 +924,9 @@ interface BoardCard {
   };
   attachments?: Array<{ id?: string; name: string; url: string }>;
   due?: { iso?: string; in?: string; overdue?: boolean } | null;
+  dateType?: 'static' | 'employee'; // omitted means due
+  dueJoin?: { iso: string } | null;
+  dueDepart?: { iso: string } | null;
   image?: { data: string; w: number; h: number; bytes: number } | null;
   components?: Record<string, boolean>;
   vaultedAt?: number; // set only while the card is in vaultedCards

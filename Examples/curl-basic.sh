@@ -68,6 +68,7 @@ CARD_RESP=$(curl -sS -X POST -H "$AUTH_HEADER" -H "Content-Type: application/jso
     \"description\": \"This card was created by curl-basic.sh\",
     \"descriptionMode\": \"markdown\",
     \"labels\": [{\"name\": \"automation\", \"color\": \"#5e9cff\"}],
+    \"dateType\": \"static\",
     \"due\": {\"iso\": \"2026-07-15T17:00:00Z\"},
     \"revision\": ${REVISION}
   }" \
