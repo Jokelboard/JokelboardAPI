@@ -5,7 +5,7 @@ Official documentation and examples for the Jokelboard Programmatic Board API an
 - Preferred API base URL: `https://api.jokelboard.com/api/v1`
 - Compatibility base URL: `https://jokelboard.com/api/v1`
 - Status: Stable
-- Last updated: July 2026
+- Last updated: August 2026
 
 The Programmatic Board API lets external applications, scripts, CI jobs, and automation agents read and update Jokelboard boards over HTTPS. Requests use bearer API keys and JSON payloads.
 
@@ -647,7 +647,7 @@ Notes:
 
 Each board list may hold a per-list **vault**: the `vaultedCards` array stores soft-deleted cards that remain recoverable until purged. The four vault endpoints below require normal board authorization **and** separate **vault access** on top of view/edit rights. A principal who can read or write the board but lacks vault access receives `403` with `vault_access_required`.
 
-On personal boards, vault access is the board owner. On organisation boards, vault access is granted by the `VAULT_ACCESS` organisation permission, a matching per-board vault ACL entry, or owner/admin/`MANAGE_BOARDS` roles. For `kind: "org"` API keys, vault access is evaluated against the **key creator's** vault access, not the key record alone.
+On personal boards, vault access is the board owner. On organisation boards, vault access is granted by the `VAULT_ACCESS` organisation permission, a matching per-board vault ACL entry, or owner/admin/`MANAGE_BOARDS` roles. For `kind: "org"` API keys, vault access is granted by the key's vault endpoint permissions (`vault.read`, `vault.vault`, `vault.restore`, `vault.purge`). An unrestricted organisation key (`endpointPermissions: null`) includes those permissions and can use the vault. Organisation keys do not inherit the key creator's vault ACL. Official bot identity does not change this. Board and profile keys still use the human holder's vault access as described above.
 
 Whole-board `PUT` can still persist `vaultedCards` for clients that manage the full board payload, but these granular endpoints are the recommended programmatic path.
 
