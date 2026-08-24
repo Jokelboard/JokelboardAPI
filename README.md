@@ -678,7 +678,8 @@ Requires scope: `boards:read` and vault access.
 
 Errors:
 
-- `403` `vault_access_required` — token can view the board but lacks vault access
+- `403` `vault_access_required` — board/profile token can view the board but lacks vault access
+- `403` `api_endpoint_permission_denied` — organisation key is locked without `vault.read`
 
 ### POST /api/v1/boards/:id/cards/:cardId/vault
 
@@ -1040,7 +1041,8 @@ Common codes:
 | `org_scope_violation` | 403 | Org key used outside its organisation |
 | `plugin_not_supported_for_org_tokens` | 403 | Org key used on plugin endpoint |
 | `forbidden` | 403 | User cannot access the board |
-| `vault_access_required` | 403 | Token can view or edit the board but lacks vault access |
+| `vault_access_required` | 403 | Board/profile token can view or edit the board but lacks vault access |
+| `api_endpoint_permission_denied` | 403 | Organisation key is locked without the matching catalog key |
 | `not_found` | 404 | Board or token not found |
 | `list_not_found` | 404 | List not found |
 | `card_not_found` | 404 | Card not found |
