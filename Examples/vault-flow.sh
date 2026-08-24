@@ -8,6 +8,11 @@
 # on top of normal board authorization. Without vault access you get 403
 # vault_access_required even if the token can view or edit the board.
 #
+# Board and profile keys use the human holder's vault ACL. Organisation
+# (global) keys, including official bot keys, need a vault.* endpoint
+# permission — or an unrestricted key, which includes every catalog
+# permission. Granting "every permission" on a global org key is enough.
+#
 # Requires: curl, bash, jq, and a valid API token with boards:read + boards:write.
 #
 # Usage:
