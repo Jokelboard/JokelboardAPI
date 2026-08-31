@@ -5,7 +5,7 @@ Official documentation and examples for the Jokelboard Programmatic Board API an
 - Preferred API base URL: `https://api.jokelboard.com/api/v1`
 - Compatibility base URL: `https://jokelboard.com/api/v1`
 - Status: Stable
-- Last updated: August 2026
+- Last updated: 31 August 2026
 
 The Programmatic Board API lets external applications, scripts, CI jobs, and automation agents read and update Jokelboard boards over HTTPS. Requests use bearer API keys and JSON payloads.
 
@@ -163,14 +163,7 @@ Every key has a `kind` that limits where it can be used.
 | `profile` | Personal boards owned by the user | User Settings -> Security -> API Keys |
 | `org` | All boards in one organisation or sub-organisation | Organisation admin -> API Keys |
 
-Reach is enforced before board access checks, so a key cannot probe unrelated boards.
-
-| Violation | HTTP | Error code |
-|-----------|------|------------|
-| Board key used on a different board | 403 | `board_scope_violation` |
-| Profile key used on an org board | 403 | `profile_scope_violation` |
-| Organisation key used outside its org | 403 | `org_scope_violation` |
-| Organisation key used on the plugin API | 403 | `plugin_not_supported_for_org_tokens` |
+Reach is enforced before board access checks, so a key cannot probe unrelated boards. Reach misses return the same `404 not_found` as a missing board (no distinct error code that would let a key enumerate boards outside its reach). Organisation keys used on the Plugin API are the exception: they return `403 plugin_not_supported_for_org_tokens`.
 
 Legacy, pre-v2 API keys were not reach-bound. They were migrated to the v2 schema and must be replaced with the appropriate key kind.
 
@@ -457,14 +450,14 @@ Query parameters (all optional, additive — omit them and the response is uncha
 | `listId` | a list id | Return only that list. Unknown ids return `404 list_not_found`. |
 | `lists` | comma-separated list ids | Return those lists in **board order**. Any unknown id returns `404 list_not_found`. Do not send `listId` and `lists` together (`400 invalid_list_filter`). |
 
-`projection=cards` is the right default for game servers, CI, and other clients that only need the kanban structure. List filters are a payload convenience, not an access-control boundary: a key that can read the board can still request any list.
+`projection=cards` is the right default for game servers, CI, and other clients that only need the kanban structure. List filters and projections shrink the **response**, not the server-side read: the stored document is still loaded, then filtered in memory. Cover images are not hydrated for `projection=cards`. List filters are a payload convenience, not an access-control boundary: a key that can read the board can still request any list.
 
-Successful responses send `ETag` and `Cache-Control: private, no-cache`. Repeat the request with `If-None-Match: <etag>` to get `304 Not Modified` and an empty body when the board (and the same projection/list filter) has not changed. The ETag is derived from the board's `updated_at` plus the query, so the server can 304 without serializing the document.
+Successful responses send `ETag` and `Cache-Control: private, no-cache`. Repeat the request with `If-None-Match` set to the previous `ETag` value **verbatim** to get `304 Not Modified` and an empty body when the board (and the same projection, list filter, and vault-visibility of the caller) has not changed. The ETag is derived from `updated_at` plus those inputs, so a matching 304 does not serialize the document. Replay the header as returned; commas inside `?lists=` tags are part of the quoted ETag, not list separators.
 
 ```http
 GET /api/v1/boards/board-abc123?projection=cards&listId=admin
 Authorization: Bearer jkb_…
-If-None-Match: W/"v1-board-board-abc123-1714990000000-cards-admin"
+If-None-Match: W/"v1-board-board-abc123-1714990000000-cards-admin-nv"
 ```
 
 ```json
@@ -486,7 +479,7 @@ If-None-Match: W/"v1-board-board-abc123-1714990000000-cards-admin"
 }
 ```
 
-JSON bodies of about 1 KiB or larger are gzip-compressed when the client sends `Accept-Encoding: gzip` (the Cloudflare tunnel path does not pass through Caddy). Clients that auto-decode Content-Encoding, including Roblox `HttpService`, can set that header.
+On `https://api.jokelboard.com` (Cloudflare tunnel, no Caddy), JSON bodies of **4 KiB or larger** may be gzip-compressed when the client sends `Accept-Encoding: gzip` (not `gzip;q=0`). Compression is asynchronous, capped to one in-flight gzip on the origin, and skipped when it would not shrink the body. Apex `https://jokelboard.com/api/v1` is compressed by Caddy instead. Clients that auto-decode Content-Encoding, including Roblox `HttpService`, can send `Accept-Encoding: gzip`.
 
 ### GET /api/v1/boards/:id/revision
 
@@ -887,7 +880,7 @@ Capability probe used by plugin and in-product UI. With bearer auth, the respons
 
 ### GET /api/v1/plugin/boards/:id
 
-Returns only the board/list/card/checklist shape needed by plugin clients. Cover images are not hydrated. Successful responses send `ETag` / `Cache-Control: private, no-cache` and honour `If-None-Match` with `304`.
+Returns only the board/list/card/checklist shape needed by plugin clients. Cover images are not hydrated. Successful responses send `ETag` / `Cache-Control: private, no-cache` and honour `If-None-Match` with `304`. A matching 304 is answered from board metadata and does not parse the stored document.
 
 ```json
 {
@@ -1079,9 +1072,11 @@ Recommended flow:
 
 | Budget | Key | Window | Limit | Applies to |
 |--------|-----|--------|-------|------------|
-| Per token | SHA-256 of the presented `jkb_…` secret | 15 minutes | 3600 | Well-formed bearer tokens |
-| Unauthenticated IP | Client IP | 15 minutes | 120 | Requests without a well-formed `jkb_` bearer |
-| Authenticated IP ceiling | Client IP | 15 minutes | 15000 | Well-formed bearers, as a many-keys-from-one-IP backstop |
+| Per token | SHA-256 of the presented `jkb_…` secret | 15 minutes | 3600 | Any well-formed `jkb_` bearer (including the first request of a new key) |
+| Unauthenticated IP | Client IP | 15 minutes | 120 | Missing bearer, junk `jkb_…` values, and the first request of a key that has not yet authenticated on this process |
+| Authenticated IP ceiling | Client IP | 15 minutes | 15000 | Keys that recently passed authentication, as a many-keys-from-one-IP backstop |
+
+A bearer that only *looks* like `jkb_…` does **not** skip the 120 probe cap. After a key authenticates successfully it is remembered for the window, then uses the per-token 3600 budget plus the 15000 IP ceiling. Many real keys from one IP still share that 15000 ceiling; they do not stack 3600 each.
 
 Exceeded budgets return HTTP `429` with `{ "error": "rate_limited" }` and standard `RateLimit-*` headers. Prefer `GET /boards/:id/revision` and `If-None-Match` so unchanged boards do not consume the token budget on a full document.
 
@@ -1135,14 +1130,11 @@ Common codes:
 | `insufficient_scope` | 403 | Plugin route requires `plugin:checklist` or `boards:write` |
 | `api_access_blocked` | 403 | Personal or org tier does not currently include Programmatic Board API access |
 | `plugin_api_access_blocked` | 403 | Tier does not currently include Board Plugin API access |
-| `board_scope_violation` | 403 | Board key used on a different board |
-| `profile_scope_violation` | 403 | Profile key used on an org board |
-| `org_scope_violation` | 403 | Org key used outside its organisation |
 | `plugin_not_supported_for_org_tokens` | 403 | Org key used on plugin endpoint |
 | `forbidden` | 403 | User cannot access the board |
 | `vault_access_required` | 403 | Board/profile token can view or edit the board but lacks vault access |
 | `api_endpoint_permission_denied` | 403 | Organisation key is locked without the matching catalog key |
-| `not_found` | 404 | Board or token not found |
+| `not_found` | 404 | Board or token not found, or the key's reach does not include that board |
 | `list_not_found` | 404 | List not found |
 | `card_not_found` | 404 | Card not found |
 | `item_not_found` | 404 | Checklist item not found |
