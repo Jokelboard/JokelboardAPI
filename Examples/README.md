@@ -29,13 +29,16 @@ All examples are **self-contained** — they use only standard library HTTP clie
 | `vault-flow.sh`             | bash + curl + jq         | List, vault, restore, and purge soft-deleted cards | curl, jq, bash        |
 | `node-full-flow.js`         | Node.js 18+ (native fetch) | Bot-aware identity, revision retry, PATCH, MOVE, bulk import | Node 18+             |
 | `python-client.py`          | Python 3 + requests      | CSV-style import, fieldValues + descriptionMode=fields, 409 handling | `pip install requests` |
-| `github-action-sync.yml`    | GitHub Actions           | React to `issues` webhooks and create cards automatically | A GitHub repo with Actions + two secrets |
+| `github-action-sync.yml`    | GitHub Actions           | React to `issues` webhooks, create cards, resolve the card's shareable link | A GitHub repo with Actions + two secrets |
 | `plugin-checklist.sh`       | bash + curl + jq         | Board Plugin API: access probe, checklist summary, item toggle | curl, jq, bash, `plugin:checklist` key |
 
 ## Tips for Writing Your Own Client
 
-- Always send the latest `revision` on mutating calls to avoid 409s.
-- Handle `429 card_rate_limited` with the `retryAfter` value.
+- Always send the latest `revision` on mutating calls to avoid 409s. `GET /api/v1/boards/:id/revision` is the cheap probe.
+- Handle `429 rate_limited` (HTTP budget) and `429 card_rate_limited` (card-create burst). Honour `RateLimit-*` / `retryAfter`.
+- Repeat GETs with `If-None-Match` from the previous `ETag` (replay the header verbatim). Unchanged boards return 304.
+- Use `?projection=cards` when you do not need comments, attachments, or cover images. The server still loads the stored document; this only shrinks the response.
+- Send `Accept-Encoding: gzip` on the tunnel host for JSON ≥ 4 KiB. Do not expect a gzip body for smaller payloads.
 - On organisation boards, every write appears in the audit log. A configured organisation bot key appears as `actor_bot`, while the human key creator remains attached for accountability.
 - `GET /api/v1/me` keeps the human creator in `user` and exposes the optional official identity in `token.bot`.
 - Bot-authored comments are server-stamped with the bot identity. Cards created without `assignees` default to unassigned for bot keys.
