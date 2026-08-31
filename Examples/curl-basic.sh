@@ -29,7 +29,7 @@ AUTH_HEADER="Authorization: Bearer ${JKB_TOKEN}"
 # lets the server reject the request (409) if someone else changed the
 # board in between, instead of silently overwriting their change.
 current_revision() {
-  curl -sS -H "$AUTH_HEADER" "$BASE/boards/${BOARD_ID}" | jq -r '.board.revision'
+  curl -sS -H "$AUTH_HEADER" "$BASE/boards/${BOARD_ID}/revision" | jq -r '.revision'
 }
 
 echo "== 1. Verify token and identity =="

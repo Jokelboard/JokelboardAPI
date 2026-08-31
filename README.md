@@ -20,6 +20,7 @@ The Programmatic Board API lets external applications, scripts, CI jobs, and aut
 - [API Key Reach](#api-key-reach)
 - [Managing API Keys](#managing-api-keys)
 - [Official Bot Accounts](#official-bot-accounts)
+- [Organisation key endpoint permissions](#organisation-key-endpoint-permissions)
 - [Programmatic Board API](#programmatic-board-api)
 - [Vault](#vault)
 - [Board Plugin API](#board-plugin-api)
@@ -248,7 +249,7 @@ Organisation keys are always Programmatic Board API keys. They cannot be plugin-
 
 ### Official Bot Accounts
 
-An organisation key may be configured with an official bot identity from the organisation's **API Keys** tab or through the session-authenticated bot endpoint. This is optional metadata on a `kind: "org"` key, not a separate key kind or authentication scheme. It does not grant any additional permissions, scopes, board reach, or Plugin API access.
+An organisation key may be configured with an official bot identity from the organisation's **API Keys** tab or through the session-authenticated bot endpoint. This is optional metadata on a `kind: "org"` key, not a separate key kind or authentication scheme. Bot identity does not grant additional scopes, board reach, or Plugin API access. Endpoint permissions on the same key are configured separately.
 
 Configuring or renaming a bot requires `CREATE_ORG_API_KEYS`, fresh web authentication, session CSRF protection, and an organisation tier with `apiAccess`. Revoked keys return `404 not_found`.
 
@@ -294,6 +295,57 @@ When a configured bot uses the Programmatic Board API:
 - New cards default to no assignees when `assignees` is omitted; explicit assignees are still honoured.
 - Organisation-key restrictions are unchanged, including no access to the Board Plugin API.
 
+### Organisation key endpoint permissions
+
+Organisation-owned Programmatic Board API keys can be limited to specific endpoints from the organisation **API Keys** tab (Permissions) or:
+
+```http
+PATCH /api/organisations/:id/tokens/:tokenId/permissions
+Content-Type: application/json
+```
+
+```json
+{
+  "permissions": [
+    "me.read",
+    "boards.list",
+    "boards.read",
+    "cards.create",
+    "cards.comment"
+  ]
+}
+```
+
+Rules:
+
+- Requires `CREATE_ORG_API_KEYS`, fresh web authentication, and an organisation tier with `apiAccess`.
+- `permissions` must be an array of catalog keys. Unknown keys are dropped. An empty array denies every catalogued endpoint.
+- A key with `endpointPermissions: null` (the default for existing keys) is unrestricted and may call every Programmatic Board API endpoint it already could.
+- Board and profile keys are not limited by this catalog.
+- Vault endpoints still require vault access in addition to the matching catalog key.
+- The Board Plugin API remains unavailable to organisation keys.
+
+`GET /api/organisations/:id/tokens` returns `endpointPermissionCatalog` plus `endpointPermissions` on each organisation key. `GET /api/v1/me` exposes the same `token.endpointPermissions` field. A denied call returns `403` with `api_endpoint_permission_denied`.
+
+Catalog keys:
+
+| Key | Endpoint |
+| --- | --- |
+| `me.read` | `GET /api/v1/me` |
+| `boards.list` | `GET /api/v1/boards` |
+| `boards.read` | `GET /api/v1/boards/:id` and `GET /api/v1/boards/:id/revision` |
+| `boards.replace` | `PUT /api/v1/boards/:id` |
+| `lists.create` | `POST /api/v1/boards/:id/lists` |
+| `cards.create` | `POST /api/v1/boards/:id/cards` |
+| `cards.update` | `PATCH /api/v1/boards/:id/cards/:cardId` |
+| `cards.comment` | `POST /api/v1/boards/:id/cards/:cardId/comments` |
+| `cards.move` | `POST /api/v1/boards/:id/cards/:cardId/move` |
+| `cards.link` | `GET /api/v1/boards/:id/cards/:cardId/link` |
+| `vault.read` | `GET /api/v1/boards/:id/vault` |
+| `vault.vault` | `POST /api/v1/boards/:id/cards/:cardId/vault` |
+| `vault.restore` | `POST /api/v1/boards/:id/cards/:cardId/restore` |
+| `vault.purge` | `DELETE /api/v1/boards/:id/vault/:cardId` |
+
 ### Create Response
 
 All create endpoints return the raw token once:
@@ -313,12 +365,13 @@ All create endpoints return the raw token once:
     "createdBySub": null,
     "created_at": 1715000000000,
     "last_used_at": null,
+    "endpointPermissions": null,
     "bot": null
   }
 }
 ```
 
-Every public token row includes `bot`. It is `{ "name": string, "avatarUrl": string | null }` only for a configured organisation key and `null` for every other key.
+Every public token row includes `bot` and `endpointPermissions`. `bot` is `{ "name": string, "avatarUrl": string | null }` only for a configured organisation key and `null` for every other key. `endpointPermissions` is a catalog-key array on restricted organisation keys and `null` when the key is unrestricted (or is not an organisation key).
 
 ### Legacy `/api/tokens`
 
@@ -394,7 +447,25 @@ Lists boards reachable by the key.
 
 ### GET /api/v1/boards/:id
 
-Fetches the complete board payload, including `data`.
+Fetches the board payload, including `data`. The default shape is the complete document (lists, cards, comments, attachments, inlined cover images, presets).
+
+Query parameters (all optional, additive — omit them and the response is unchanged):
+
+| Parameter | Values | Effect |
+|-----------|--------|--------|
+| `projection` | `full` (default), `cards` | `cards` keeps list/card identity, titles, labels, assignees, due dates, field values, descriptions, and checklists. It drops comments, attachments, cover images, vaulted cards, and board presets. |
+| `listId` | a list id | Return only that list. Unknown ids return `404 list_not_found`. |
+| `lists` | comma-separated list ids | Return those lists in **board order**. Any unknown id returns `404 list_not_found`. Do not send `listId` and `lists` together (`400 invalid_list_filter`). |
+
+`projection=cards` is the right default for game servers, CI, and other clients that only need the kanban structure. List filters are a payload convenience, not an access-control boundary: a key that can read the board can still request any list.
+
+Successful responses send `ETag` and `Cache-Control: private, no-cache`. Repeat the request with `If-None-Match: <etag>` to get `304 Not Modified` and an empty body when the board (and the same projection/list filter) has not changed. The ETag is derived from the board's `updated_at` plus the query, so the server can 304 without serializing the document.
+
+```http
+GET /api/v1/boards/board-abc123?projection=cards&listId=admin
+Authorization: Bearer jkb_…
+If-None-Match: W/"v1-board-board-abc123-1714990000000-cards-admin"
+```
 
 ```json
 {
@@ -414,6 +485,22 @@ Fetches the complete board payload, including `data`.
   }
 }
 ```
+
+JSON bodies of about 1 KiB or larger are gzip-compressed when the client sends `Accept-Encoding: gzip` (the Cloudflare tunnel path does not pass through Caddy). Clients that auto-decode Content-Encoding, including Roblox `HttpService`, can set that header.
+
+### GET /api/v1/boards/:id/revision
+
+Cheap probe for polling. Returns only identity and the current `revision` (`updated_at`). Same auth, reach, and `boards.read` endpoint permission as the full GET. Also supports `ETag` / `If-None-Match`.
+
+```json
+{
+  "id": "board-abc123",
+  "revision": 1714990000000,
+  "updated_at": 1714990000000
+}
+```
+
+Recommended poll loop: store `revision`, call this endpoint (or send `If-None-Match` on the full GET), and only refetch `GET /api/v1/boards/:id` when the revision changes.
 
 ### PUT /api/v1/boards/:id
 
@@ -610,7 +697,7 @@ Returns the card's shareable web URL — the same link the board UI's **Share** 
 Requires scope: `boards:read`.
 
 ```bash
-curl -H "Authorization: Bearer $JOKELBOARD_TOKEN" \
+curl -H "Authorization: Bearer $JKB_TOKEN" \
   https://api.jokelboard.com/api/v1/boards/$BOARD_ID/cards/taiga-us-213/link
 ```
 
@@ -800,7 +887,7 @@ Capability probe used by plugin and in-product UI. With bearer auth, the respons
 
 ### GET /api/v1/plugin/boards/:id
 
-Returns only the board/list/card/checklist shape needed by plugin clients.
+Returns only the board/list/card/checklist shape needed by plugin clients. Cover images are not hydrated. Successful responses send `ETag` / `Cache-Control: private, no-cache` and honour `If-None-Match` with `304`.
 
 ```json
 {
@@ -979,7 +1066,7 @@ If supplied, `revision` must equal the board's current `updated_at` value. `DELE
 
 Recommended flow:
 
-1. `GET /api/v1/boards/:id`
+1. `GET /api/v1/boards/:id` (or `GET /api/v1/boards/:id/revision` when you only need the stamp)
 2. Store `board.revision`
 3. Send the write with that `revision`
 4. On `409`, refetch and retry after merging your intended change
@@ -987,6 +1074,18 @@ Recommended flow:
 ---
 
 ## Rate Limits and Quotas
+
+`/api/v1` is **not** on the website session limiter. Bearer traffic uses three stacked budgets so shared egress IPs (Roblox game servers, CI) do not starve each other, while a leaked key still cannot flood the origin:
+
+| Budget | Key | Window | Limit | Applies to |
+|--------|-----|--------|-------|------------|
+| Per token | SHA-256 of the presented `jkb_…` secret | 15 minutes | 3600 | Well-formed bearer tokens |
+| Unauthenticated IP | Client IP | 15 minutes | 120 | Requests without a well-formed `jkb_` bearer |
+| Authenticated IP ceiling | Client IP | 15 minutes | 15000 | Well-formed bearers, as a many-keys-from-one-IP backstop |
+
+Exceeded budgets return HTTP `429` with `{ "error": "rate_limited" }` and standard `RateLimit-*` headers. Prefer `GET /boards/:id/revision` and `If-None-Match` so unchanged boards do not consume the token budget on a full document.
+
+Website session routes remain at 3000 requests / 15 minutes per IP.
 
 ### Card Creation Burst Guard
 
@@ -1051,7 +1150,10 @@ Common codes:
 | `revision_conflict` | 409 | Stale write revision |
 | `list_exists` | 409 | Client-supplied list id already exists |
 | `card_exists` | 409 | Client-supplied card id already exists |
+| `invalid_projection` | 400 | `?projection=` was not `full` or `cards` |
+| `invalid_list_filter` | 400 | `listId` and `lists` were both sent, or `lists` was empty |
 | `card_rate_limited` | 429 | Too many cards created in the burst window |
+| `rate_limited` | 429 | Token or IP HTTP budget exceeded |
 | `invalid_data` | 400 | Whole-board replacement payload is invalid |
 | `invalid_card_patch` | 400 | Card patch payload failed validation |
 | `invalid_type` | 400 | Token creation type was not `programmatic` or `plugin` |
