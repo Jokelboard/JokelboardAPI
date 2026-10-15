@@ -8,10 +8,11 @@
  * with the X-Sandbox-Scenario header. Replace `createCard` with your own
  * wrapper to test it.
  *
- * Node 18+ (global fetch). No key, paid plan, or dependencies needed.
+ * Node 18+ (global fetch). No paid plan or dependencies needed, only a free
+ * sandbox key (User Settings -> Security -> API Keys, type "Sandbox API").
  *
- *   node node-sandbox-resilience.js
- *   JKB_BASE_URL=http://localhost:3000/api/sandbox/v1 node node-sandbox-resilience.js
+ *   JKB_SANDBOX_KEY=jkb_sbx_... node node-sandbox-resilience.js
+ *   JKB_SANDBOX_KEY=jkb_sbx_... JKB_BASE_URL=http://localhost:3000/api/sandbox/v1 node node-sandbox-resilience.js
  *
  * Exits non-zero if any check fails, so it also works as a CI step.
  *
@@ -20,8 +21,12 @@
  */
 
 const BASE = process.env.JKB_BASE_URL || 'https://api.jokelboard.com/api/sandbox/v1';
-const TOKEN = 'jkb_sandbox_full'; // a public sandbox token, not a secret
+const TOKEN = process.env.JKB_SANDBOX_KEY; // your sandbox key: keep it out of git
 const BOARD = 'sbx-personal';
+if (!TOKEN) {
+  console.error('Set JKB_SANDBOX_KEY to a sandbox key (User Settings -> Security -> API Keys, type "Sandbox API").');
+  process.exit(1);
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

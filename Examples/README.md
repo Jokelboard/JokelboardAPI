@@ -6,7 +6,7 @@ All examples are **self-contained** — they use only standard library HTTP clie
 
 ## Quick Start
 
-> **No key or paid plan yet?** Run [`sandbox-smoke.sh`](sandbox-smoke.sh) or [`node-sandbox-resilience.js`](node-sandbox-resilience.js) first. They use the keyless [Sandbox API](../README.md#sandbox-api), so there is nothing to set up. The steps below are for the real API.
+> **No paid plan yet?** Run [`sandbox-smoke.sh`](sandbox-smoke.sh) or [`node-sandbox-resilience.js`](node-sandbox-resilience.js) first. They use the [Sandbox API](../README.md#sandbox-api) and only need a free sandbox key: mint one in **User Settings -> Security -> API Keys** (type **Sandbox API**, any plan) and `export JKB_SANDBOX_KEY="jkb_sbx_..."`. The steps below are for the real API.
 
 1. Create an API key from one of the current key-management surfaces:
    - Board key: board **Automations** menu, or `POST /api/v1/boards/:id/tokens`
@@ -33,12 +33,12 @@ All examples are **self-contained** — they use only standard library HTTP clie
 | `python-client.py`          | Python 3 + requests      | CSV-style import, fieldValues + descriptionMode=fields, 409 handling | `pip install requests` |
 | `github-action-sync.yml`    | GitHub Actions           | React to `issues` webhooks, create cards, resolve the card's shareable link | A GitHub repo with Actions + two secrets |
 | `plugin-checklist.sh`       | bash + curl + jq         | Board Plugin API: access probe, checklist summary, item toggle | curl, jq, bash, `plugin:checklist` key |
-| `sandbox-smoke.sh`          | bash + curl + jq         | **Sandbox API**: manifest, create/comment/move with chained revisions, forced 409/429/500/502 | curl, jq, bash (no key) |
-| `node-sandbox-resilience.js` | Node.js 18+ (native fetch) | **Sandbox API**: checks that a client retries 409 and 429, never retries a 400, and survives non-JSON 5xx | Node 18+ (no key) |
+| `sandbox-smoke.sh`          | bash + curl + jq         | **Sandbox API**: manifest, create/comment/move with chained revisions, forced 409/429/500/502 | curl, jq, bash, `JKB_SANDBOX_KEY` |
+| `node-sandbox-resilience.js` | Node.js 18+ (native fetch) | **Sandbox API**: checks that a client retries 409 and 429, never retries a 400, and survives non-JSON 5xx | Node 18+, `JKB_SANDBOX_KEY` |
 
 ## Tips for Writing Your Own Client
 
-- Develop against the [Sandbox API](../README.md#sandbox-api) first: change `BASE`, the token, and the board and list ids (the sandbox's are fixed) when you go live. Force the failures your code must survive with `X-Sandbox-Scenario` (`revision_conflict`, `rate_limited`, `server_error`, `bad_gateway`, ...), then re-run your tests against a scratch board you own, since the sandbox stores nothing.
+- Develop against the [Sandbox API](../README.md#sandbox-api) first: change `BASE`, the key, and the board and list ids (the sandbox's are fixed) when you go live. Try other kinds of key with `X-Sandbox-Persona` (`readonly`, `org`, `org_limited`, ...) and force the failures your code must survive with `X-Sandbox-Scenario` (`revision_conflict`, `rate_limited`, `server_error`, `bad_gateway`, ...), then re-run your tests against a scratch board you own, since the sandbox stores nothing.
 
 - Always send the latest `revision` on mutating calls to avoid 409s. `GET /api/v1/boards/:id/revision` is the cheap probe.
 - Handle `429 rate_limited` (HTTP budget) and `429 card_rate_limited` (card-create burst). Honour `RateLimit-*` / `retryAfter`.

@@ -19,7 +19,8 @@
   - [Vault](README.md#vault)
 - [Board Plugin API](README.md#board-plugin-api)
 - [Sandbox API](README.md#sandbox-api)
-  - [Sandbox tokens](README.md#sandbox-tokens)
+  - [Sandbox keys](README.md#sandbox-keys)
+  - [Personas](README.md#personas-x-sandbox-persona)
   - [Forcing a failure](README.md#forcing-a-failure-x-sandbox-scenario)
   - [What it does not prove](README.md#what-a-green-sandbox-run-does-not-prove)
 - [Data Model](README.md#data-model)
@@ -50,4 +51,4 @@
 **Live API**
 
 - [https://api.jokelboard.com/api/v1](https://api.jokelboard.com/api/v1)
-- [https://api.jokelboard.com/api/sandbox/v1](https://api.jokelboard.com/api/sandbox/v1) (sandbox, no key needed)
+- [https://api.jokelboard.com/api/sandbox/v1](https://api.jokelboard.com/api/sandbox/v1) (sandbox, free sandbox key)

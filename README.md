@@ -4,7 +4,7 @@ Official documentation and examples for the Jokelboard Programmatic Board API an
 
 - Preferred API base URL: `https://api.jokelboard.com/api/v1`
 - Compatibility base URL: `https://jokelboard.com/api/v1`
-- Sandbox base URL (no key or plan needed): `https://api.jokelboard.com/api/sandbox/v1`
+- Sandbox base URL (no paid plan needed; any account can mint a sandbox key): `https://api.jokelboard.com/api/sandbox/v1`
 - Status: Stable
 - Last updated: 15 October 2026
 
@@ -44,7 +44,7 @@ The current API has four related surfaces:
 1. Session-authenticated key management endpoints for creating, listing, revoking, and configuring API keys.
 2. Bearer-authenticated `/api/v1/*` Programmatic Board API endpoints for board, list, card, comment, and move operations.
 3. Bearer-authenticated `/api/v1/plugin/*` endpoints for the smaller Board Plugin API checklist surface.
-4. A keyless [Sandbox API](#sandbox-api) under `/api/sandbox/v1/*`: the same routes on fake data, for building and testing an integration before you have a key or a paid plan.
+4. A [Sandbox API](#sandbox-api) under `/api/sandbox/v1/*`: the same routes on fake data, for building and testing an integration before you have a paid plan. It takes a free sandbox key that any account can mint.
 
 Programmatic Board API operations include:
 
@@ -97,13 +97,13 @@ The API is intentionally small and JSON-first so it can be used from curl, any l
 
 Complete runnable scripts live in the [`Examples/`](#examples) directory.
 
-> **No key or plan yet?** Every call above also works against the [Sandbox API](#sandbox-api) with a published token such as `jkb_sandbox_full`. Swap the base URL for `https://api.jokelboard.com/api/sandbox/v1` and use the board id `sbx-personal` (list ids `sbx-list-todo`, `sbx-list-doing`, `sbx-list-done`); nothing is stored.
+> **No paid plan yet?** Every call above also works against the [Sandbox API](#sandbox-api) with a free [sandbox key](#sandbox-keys) (User Settings -> Security -> API Keys, type **Sandbox API**; any account can mint one). Swap the base URL for `https://api.jokelboard.com/api/sandbox/v1` and use the board id `sbx-personal` (list ids `sbx-list-todo`, `sbx-list-doing`, `sbx-list-done`); nothing is stored.
 
 ---
 
 ## Access Requirements
 
-The [Sandbox API](#sandbox-api) is the exception: it needs neither an API key nor a paid plan. Everything below applies to the real `/api/v1` surfaces.
+The [Sandbox API](#sandbox-api) is the exception: it needs no paid plan, only a free [sandbox key](#sandbox-keys) that any account can mint. Everything below applies to the real `/api/v1` surfaces.
 
 ### Programmatic Access
 
@@ -222,6 +222,26 @@ Create request:
   "type": "programmatic"
 }
 ```
+
+### Sandbox API Keys
+
+Sandbox keys (`jkb_sbx_...`) only open the [Sandbox API](#sandbox-api). Any account can mint them, on every plan, and minting does not need fresh authentication. See [Sandbox keys](#sandbox-keys) for how many an account may hold and the request budget.
+
+```http
+GET    /api/me/sandbox-keys
+POST   /api/me/sandbox-keys
+DELETE /api/me/sandbox-keys/:keyId
+```
+
+Create request:
+
+```json
+{
+  "name": "My bot (sandbox)"
+}
+```
+
+The response carries the secret once in `token`. At the plan's cap, creation returns `409 sandbox_key_limit` with `limit` and `current`; revoke a key to mint another.
 
 ### Organisation Keys
 
@@ -937,45 +957,64 @@ Response:
 
 ## Sandbox API
 
-The Sandbox API is a fake copy of the Programmatic Board API and Board Plugin API for building and testing bots and integrations **before** you have a paid plan or a real key. It has the same routes, request validation, error codes, status codes, and response shapes as `/api/v1/*`, but it runs on fake data and **stores nothing**: no database, no sessions, no live updates. Break it as much as you like.
+The Sandbox API is a fake copy of the Programmatic Board API and Board Plugin API for building and testing bots and integrations **before** you have a paid plan or a real key. It needs a free [sandbox key](#sandbox-keys), which any account can mint. It has the same routes, request validation, error codes, status codes, and response shapes as `/api/v1/*`, but it runs on fake data and **stores nothing**: no database, no sessions, no live updates. Break it as much as you like.
 
 ```text
 production   https://api.jokelboard.com/api/v1/...
 sandbox      https://api.jokelboard.com/api/sandbox/v1/...     (also on https://jokelboard.com)
 ```
 
-To move between them, change the base URL and the token, and use board and list ids that exist on that side: the sandbox's boards and lists are fixed (`sbx-personal`, `sbx-list-done`, ...), while a real key needs the ids of boards it can reach. Your request and response handling does not change.
+To move between them, change the base URL and the key, and use board and list ids that exist on that side: the sandbox's boards and lists are fixed (`sbx-personal`, `sbx-list-done`, ...), while a real key needs the ids of boards it can reach. Your request and response handling does not change.
 
 ```bash
-# A self-describing manifest: tokens, boards, scenarios and limits. No token needed.
+# A self-describing manifest: personas, boards, scenarios and limits. No key needed.
 curl -sS https://api.jokelboard.com/api/sandbox/v1
 
-curl -sS -H "Authorization: Bearer jkb_sandbox_full" \
+export JKB_SANDBOX_KEY="jkb_sbx_..."   # User Settings -> Security -> API Keys, type Sandbox API
+
+curl -sS -H "Authorization: Bearer $JKB_SANDBOX_KEY" \
   https://api.jokelboard.com/api/sandbox/v1/boards/sbx-personal
 
 curl -sS -X POST \
-  -H "Authorization: Bearer jkb_sandbox_full" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $JKB_SANDBOX_KEY" -H "Content-Type: application/json" \
   -d '{"listId": "sbx-list-done", "title": "Hello from my bot"}' \
   https://api.jokelboard.com/api/sandbox/v1/boards/sbx-personal/cards
+
+# The same key acting as an organisation key with a bot identity.
+curl -sS -H "Authorization: Bearer $JKB_SANDBOX_KEY" -H "X-Sandbox-Persona: org" \
+  https://api.jokelboard.com/api/sandbox/v1/boards/sbx-org
 ```
 
 Every response the sandbox itself sends carries `X-Jokelboard-Sandbox: 1`. Runnable scripts: [`sandbox-smoke.sh`](./Examples/sandbox-smoke.sh) and [`node-sandbox-resilience.js`](./Examples/node-sandbox-resilience.js).
 
-### Sandbox tokens
+### Sandbox keys
 
-The sandbox accepts **only** these published tokens. Each is a persona that takes a different path through the real authentication chain, so you can test how your code reacts to each outcome. Sandbox tokens are public and grant nothing real; real API keys do not work in the sandbox, and sandbox tokens do not work on `/api/v1`.
+Every sandbox call except the manifest needs a sandbox key (`jkb_sbx_...`). Mint one in **User Settings -> Security -> API Keys**, type **Sandbox API**, or with `POST /api/me/sandbox-keys` (see [Sandbox API Keys](#sandbox-api-keys)). The secret is shown once. Real API keys do not work in the sandbox, and sandbox keys do not work on `/api/v1`.
 
-| Token | Acts as | Use it to test |
-|-------|---------|----------------|
-| `jkb_sandbox_full` | Personal key, Ultra, `boards:read` + `boards:write` | The happy path. Reaches the `sbx-personal` board only. |
-| `jkb_sandbox_readonly` | Personal key, `boards:read` | Reads work; every write returns `403 api_scope_required`. |
-| `jkb_sandbox_plugin` | Personal key, `plugin:checklist` | The Board Plugin API. Programmatic routes return `api_scope_required`. |
-| `jkb_sandbox_org` | Organisation key with an official bot identity | Reaches the `sbx-org` board only. Comments are signed as `Sandbox Bot`, new cards are unassigned, and the Plugin API is refused (`plugin_not_supported_for_org_tokens`). |
-| `jkb_sandbox_org_limited` | Organisation key limited to `me.read`, `boards.list`, `boards.read` | `403 api_endpoint_permission_denied` naming the missing `permission`; no vault access. |
-| `jkb_sandbox_tier_blocked` | A key whose plan was downgraded | `403 api_access_blocked` on every call. |
-| `jkb_sandbox_rate_limited` | A key that has spent its budget | `429 rate_limited` with `Retry-After` and `RateLimit-*` on every call. |
+| Account | Sandbox keys | Request budget |
+|---------|--------------|----------------|
+| Free | 1 | 200 requests per 30 minutes |
+| Personal subscription (any personal plan above Free) | 3 | 300 requests per 15 minutes |
 
-Any other token returns `401 invalid_api_token` (the sandbox adds a `message` hint that production's bare `{ "error" }` does not have). A missing header returns `401 api_token_required`. A board outside the key's reach, such as `jkb_sandbox_full` asking for `sbx-org`, is `404 not_found`, exactly like a missing board.
+The budget belongs to the **account** and is shared by all of its sandbox keys, so a second key does not add requests. The plan is checked on every call, so an upgrade or downgrade applies straight away; organisation plans do not count. A spent budget returns `429 rate_limited` with `Retry-After` and `RateLimit-*`, the same shape as production. The manifest reports these numbers under `keys.perAccount`.
+
+Anything that is not a live sandbox key returns `401 invalid_api_token` (the sandbox adds a `message` hint that production's bare `{ "error" }` does not have). A missing header returns `401 api_token_required`.
+
+### Personas: `X-Sandbox-Persona`
+
+Your sandbox key can act as any of these personas. Each takes a different path through the real authentication chain, so you can test how your code reacts to each outcome. Pick one per request with `X-Sandbox-Persona: <name>`; without the header the key acts as `full`. An unknown name returns `400 unknown_sandbox_persona` and lists the valid names.
+
+| Persona | Acts as | Use it to test |
+|---------|---------|----------------|
+| `full` | Personal key, Ultra, `boards:read` + `boards:write` | The happy path. Reaches the `sbx-personal` board only. |
+| `readonly` | Personal key, `boards:read` | Reads work; every write returns `403 api_scope_required`. |
+| `plugin` | Personal key, `plugin:checklist` | The Board Plugin API. Programmatic routes return `api_scope_required`. |
+| `org` | Organisation key with an official bot identity | Reaches the `sbx-org` board only. Comments are signed as `Sandbox Bot`, new cards are unassigned, and the Plugin API is refused (`plugin_not_supported_for_org_tokens`). |
+| `org_limited` | Organisation key limited to `me.read`, `boards.list`, `boards.read` | `403 api_endpoint_permission_denied` naming the missing `permission`; no vault access. |
+| `tier_blocked` | A key whose plan was downgraded | `403 api_access_blocked` on every call. |
+| `rate_limited` | A key that has spent its budget | `429 rate_limited` with `Retry-After` and `RateLimit-*` on every call. |
+
+A board outside the persona's reach, such as `full` asking for `sbx-org`, is `404 not_found`, exactly like a missing board. Every call spends your account's budget, whichever persona it uses.
 
 ### Sandbox boards
 
@@ -1017,8 +1056,8 @@ The sandbox is deliberately simple. These are the differences from production:
 - **Plan quotas and cover images are not simulated.** Use `X-Sandbox-Scenario: card_limit` to see the error shape.
 - **Request bodies are capped at 256 KB.** Production accepts up to 4 MiB for board writes, so a large `PUT` that works in production returns `413 payload_too_large` here.
 - **The plugin toggle always flips the fixture's value**, so toggling twice returns the same answer twice. `GET /plugin/access-level` needs a token (production also has a browser-session mode).
-- **Rate limits are the sandbox's own:** 1200 requests per IP per 15 minutes, reported in `RateLimit-*`. They say nothing about your production budget. The card-creation burst guard exists only as a scenario.
-- **Bot identity on whole-board writes.** `jkb_sandbox_org` signs comments as the bot, but a whole-board `PUT` is not re-stamped, whereas production also overwrites forged bot stamps.
+- **Rate limits are the sandbox's own:** your account's [sandbox budget](#sandbox-keys), plus a backstop of 1200 requests per IP per 15 minutes, reported in `RateLimit-*`. They say nothing about your production budget. The card-creation burst guard exists only as a scenario.
+- **Bot identity on whole-board writes.** The `org` persona signs comments as the bot, but a whole-board `PUT` is not re-stamped, whereas production also overwrites forged bot stamps.
 - `board.url` points back into the sandbox, responses are not gzipped, and there are no side effects: no audit log, no @-mention notifications, no live updates.
 
 ### Behaviour it reproduces
@@ -1189,7 +1228,7 @@ A bearer that only *looks* like `jkb_…` does **not** skip the 120 probe cap. A
 
 Exceeded budgets return HTTP `429` with `{ "error": "rate_limited" }` and standard `RateLimit-*` headers. Prefer `GET /boards/:id/revision` and `If-None-Match` so unchanged boards do not consume the token budget on a full document.
 
-Website session routes remain at 3000 requests / 15 minutes per IP.
+Website session routes remain at 3000 requests / 15 minutes per IP. The [Sandbox API](#sandbox-api) has its own per-account budgets, see [Sandbox keys](#sandbox-keys).
 
 ### Card Creation Burst Guard
 
@@ -1265,6 +1304,8 @@ Common codes:
 | `text_required` | 400 | Comment text was empty or rejected |
 | `gone` | 410 | Legacy `POST /api/tokens` or `DELETE /api/tokens/:id` was called |
 | `unknown_sandbox_scenario` | 400 | `X-Sandbox-Scenario` named a scenario that does not exist ([Sandbox API](#sandbox-api) only) |
+| `unknown_sandbox_persona` | 400 | `X-Sandbox-Persona` named a persona that does not exist ([Sandbox API](#sandbox-api) only) |
+| `sandbox_key_limit` | 409 | `POST /api/me/sandbox-keys` at the plan's sandbox-key cap |
 
 Not every failure is a JSON object. An unhandled server error is a `500` with a plain-text body, and a proxy in front of the API can answer `502` with HTML when the origin is unreachable, so parse the body defensively. The [Sandbox API](#sandbox-api) can produce both on demand.
 
@@ -1298,7 +1339,7 @@ See the [`Examples/`](./Examples) directory:
 - [`python-client.py`](./Examples/python-client.py) - Python `requests` client with field value patching and retries
 - [`github-action-sync.yml`](./Examples/github-action-sync.yml) - GitHub Actions issue-to-card workflow
 - [`plugin-checklist.sh`](./Examples/plugin-checklist.sh) - Board Plugin API: access probe, checklist listing, item toggle
-- [`sandbox-smoke.sh`](./Examples/sandbox-smoke.sh) - keyless tour of the [Sandbox API](#sandbox-api): manifest, a create/comment/move flow, and forced failures
+- [`sandbox-smoke.sh`](./Examples/sandbox-smoke.sh) - tour of the [Sandbox API](#sandbox-api) with a free sandbox key: manifest, a create/comment/move flow, and forced failures
 - [`node-sandbox-resilience.js`](./Examples/node-sandbox-resilience.js) - Node.js 18+ check that your client retries 409 and 429 and survives non-JSON 5xx, using sandbox scenarios
 
 ---
@@ -1313,7 +1354,7 @@ See the [`Examples/`](./Examples) directory:
 6. Use HTTPS only.
 7. Scan logs and `.env` files for the `jkb_` prefix before sharing them.
 8. Give each organisation automation a descriptive key name and, when it acts publicly, a distinct bot identity so audit attribution stays legible.
-9. The `jkb_sandbox_*` tokens are public by design and grant nothing real, so a match on one is not a leak. Never send a real key to the Sandbox API.
+9. Sandbox keys (`jkb_sbx_...`) reach only fake data, but they are tied to your account and spend its sandbox budget: keep them out of public repos and revoke a leaked one. Never send a real key to the Sandbox API.
 
 ---
 
