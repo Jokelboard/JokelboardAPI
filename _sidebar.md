@@ -18,6 +18,11 @@
   - [Card Link](README.md#get-apiv1boardsidcardscardidlink)
   - [Vault](README.md#vault)
 - [Board Plugin API](README.md#board-plugin-api)
+- [Sandbox API](README.md#sandbox-api)
+  - [Sandbox keys](README.md#sandbox-keys)
+  - [Personas](README.md#personas-x-sandbox-persona)
+  - [Forcing a failure](README.md#forcing-a-failure-x-sandbox-scenario)
+  - [What it does not prove](README.md#what-a-green-sandbox-run-does-not-prove)
 - [Data Model](README.md#data-model)
 - [Revisions & Concurrency](README.md#optimistic-concurrency-and-revisions)
 - [Rate Limits](README.md#rate-limits-and-quotas)
@@ -38,9 +43,12 @@
 - [python-client.py](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/python-client.py)
 - [github-action-sync.yml](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/github-action-sync.yml)
 - [plugin-checklist.sh](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/plugin-checklist.sh)
+- [sandbox-smoke.sh](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/sandbox-smoke.sh)
+- [node-sandbox-resilience.js](https://github.com/Jokelboard/JokelboardAPI/blob/main/Examples/node-sandbox-resilience.js)
 
 ---
 
 **Live API**
 
 - [https://api.jokelboard.com/api/v1](https://api.jokelboard.com/api/v1)
+- [https://api.jokelboard.com/api/sandbox/v1](https://api.jokelboard.com/api/sandbox/v1) (sandbox, free sandbox key)
