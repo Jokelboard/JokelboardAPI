@@ -38,7 +38,7 @@ All examples are **self-contained** — they use only standard library HTTP clie
 
 ## Tips for Writing Your Own Client
 
-- Develop against the [Sandbox API](../README.md#sandbox-api) first: change only `BASE` and the token. Force the failures your code must survive with `X-Sandbox-Scenario` (`revision_conflict`, `rate_limited`, `server_error`, `bad_gateway`, ...), then re-run your tests against a scratch board you own, since the sandbox stores nothing.
+- Develop against the [Sandbox API](../README.md#sandbox-api) first: change `BASE`, the token, and the board and list ids (the sandbox's are fixed) when you go live. Force the failures your code must survive with `X-Sandbox-Scenario` (`revision_conflict`, `rate_limited`, `server_error`, `bad_gateway`, ...), then re-run your tests against a scratch board you own, since the sandbox stores nothing.
 
 - Always send the latest `revision` on mutating calls to avoid 409s. `GET /api/v1/boards/:id/revision` is the cheap probe.
 - Handle `429 rate_limited` (HTTP budget) and `429 card_rate_limited` (card-create burst). Honour `RateLimit-*` / `retryAfter`.

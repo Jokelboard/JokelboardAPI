@@ -97,7 +97,7 @@ The API is intentionally small and JSON-first so it can be used from curl, any l
 
 Complete runnable scripts live in the [`Examples/`](#examples) directory.
 
-> **No key or plan yet?** Every call above also works against the [Sandbox API](#sandbox-api) with a published token such as `jkb_sandbox_full`. Swap the base URL for `https://api.jokelboard.com/api/sandbox/v1` and nothing is stored.
+> **No key or plan yet?** Every call above also works against the [Sandbox API](#sandbox-api) with a published token such as `jkb_sandbox_full`. Swap the base URL for `https://api.jokelboard.com/api/sandbox/v1` and use the board id `sbx-personal` (list ids `sbx-list-todo`, `sbx-list-doing`, `sbx-list-done`); nothing is stored.
 
 ---
 
@@ -944,7 +944,7 @@ production   https://api.jokelboard.com/api/v1/...
 sandbox      https://api.jokelboard.com/api/sandbox/v1/...     (also on https://jokelboard.com)
 ```
 
-Switch between them by changing the base URL and the token, nothing else.
+To move between them, change the base URL and the token, and use board and list ids that exist on that side: the sandbox's boards and lists are fixed (`sbx-personal`, `sbx-list-done`, ...), while a real key needs the ids of boards it can reach. Your request and response handling does not change.
 
 ```bash
 # A self-describing manifest: tokens, boards, scenarios and limits. No token needed.
@@ -1032,7 +1032,7 @@ These catch real integrations out, and the sandbox returns the same errors:
 
 ### Moving to production
 
-1. Change the base URL to `https://api.jokelboard.com/api/v1` and the token to a real key (see [Managing API Keys](#managing-api-keys); personal keys need Ultra, organisation keys need FL PRO or above).
+1. Change the base URL to `https://api.jokelboard.com/api/v1`, the token to a real key (see [Managing API Keys](#managing-api-keys); personal keys need Ultra, organisation keys need FL PRO or above), and the board and list ids to ones that key can reach. `sbx-personal` and the other sandbox ids return `404 not_found` on `/api/v1`.
 2. Re-run your integration tests against a scratch board you own. That is the only way to cover what the sandbox cannot: persistence, real revision races, plan quotas, and large boards.
 
 ---

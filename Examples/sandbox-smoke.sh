@@ -16,77 +16,105 @@
 #   5. Shows a title the real API also rejects (a Discord-style mention)
 #   6. Forces a 409, a 429, a plain-text 500 and an HTML 502 with X-Sandbox-Scenario
 #
+# It stops with a non-zero exit at the first call that does not behave as described,
+# so a green run really did all of the above.
 set -euo pipefail
 
 BASE="${JKB_BASE_URL:-https://api.jokelboard.com/api/sandbox/v1}"
+# A fixed sandbox board. Production board and list ids are different, see the last line.
 BOARD="sbx-personal"
 AUTH=(-H "Authorization: Bearer jkb_sandbox_full")   # a public sandbox token, not a secret
 JSON=(-H "Content-Type: application/json")
 
 BODY_FILE=$(mktemp)
-trap 'rm -f "$BODY_FILE"' EXIT
+HEAD_FILE=$(mktemp)
+trap 'rm -f "$BODY_FILE" "$HEAD_FILE"' EXIT
 
 section() { printf '\n== %s ==\n' "$1"; }
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+# A call that must succeed. `curl -f` turns an HTTP error into a failure, so a
+# rejected token never reaches jq as a harmless-looking error body.
+ok() { curl -fsS "$@"; }
+
+# expect STATUS curl-args...: a call that must come back with exactly STATUS.
+# The body is left in $BODY_FILE and the response headers in $HEAD_FILE.
+expect() {
+  local want="$1" got
+  shift
+  got=$(curl -sS -o "$BODY_FILE" -D "$HEAD_FILE" -w '%{http_code}' "$@")
+  [ "$got" = "$want" ] || fail "expected HTTP $want, got $got for: $*"
+}
 
 section "1. The manifest (no token needed)"
-curl -sS "$BASE" | jq '{sandbox, tokens: [.tokens[].token], scenarios: [.scenarios[].name]}'
+ok "$BASE" | jq '{sandbox, tokens: [.tokens[].token], scenarios: [.scenarios[].name]}'
 
 section "2. Verify the token, then read the board"
-curl -sS "${AUTH[@]}" "$BASE/me" | jq '{user: .user.username, tier: .user.tier, scopes: .token.scopes}'
-BOARD_JSON=$(curl -sS "${AUTH[@]}" "$BASE/boards/$BOARD")
-REVISION=$(jq -r '.board.revision' <<<"$BOARD_JSON")
+ok "${AUTH[@]}" "$BASE/me" | jq '{user: .user.username, tier: .user.tier, scopes: .token.scopes}'
+BOARD_JSON=$(ok "${AUTH[@]}" "$BASE/boards/$BOARD")
+REVISION=$(jq -er '.board.revision' <<<"$BOARD_JSON")
 jq '.board | {id, revision, lists: [.data.lists[] | {id, cards: (.cards | length)}]}' <<<"$BOARD_JSON"
 
 section "3. Write, chaining the revision each reply returns"
 # A real board's revision changes on every write; the sandbox answers with the one you sent plus one.
-LIST_JSON=$(curl -sS -X POST "${AUTH[@]}" "${JSON[@]}" \
+LIST_JSON=$(ok -X POST "${AUTH[@]}" "${JSON[@]}" \
   -d "{\"title\": \"Sandbox lane\", \"revision\": $REVISION}" "$BASE/boards/$BOARD/lists")
-LIST_ID=$(jq -r '.list.id' <<<"$LIST_JSON")
-REVISION=$(jq -r '.board.revision' <<<"$LIST_JSON")
+LIST_ID=$(jq -er '.list.id' <<<"$LIST_JSON")
+REVISION=$(jq -er '.board.revision' <<<"$LIST_JSON")
 echo "list $LIST_ID, revision now $REVISION"
 
-CARD_JSON=$(curl -sS -X POST "${AUTH[@]}" "${JSON[@]}" \
+CARD_JSON=$(ok -X POST "${AUTH[@]}" "${JSON[@]}" \
   -d "{\"listId\": \"$LIST_ID\", \"title\": \"Hello from my bot\", \"revision\": $REVISION}" \
   "$BASE/boards/$BOARD/cards")
-CARD_ID=$(jq -r '.card.id' <<<"$CARD_JSON")
-REVISION=$(jq -r '.board.revision' <<<"$CARD_JSON")
+CARD_ID=$(jq -er '.card.id' <<<"$CARD_JSON")
+REVISION=$(jq -er '.board.revision' <<<"$CARD_JSON")
 echo "card $CARD_ID, revision now $REVISION"
 
 # Ids the sandbox issued resolve in later calls, so create -> comment -> move works.
-COMMENT_JSON=$(curl -sS -X POST "${AUTH[@]}" "${JSON[@]}" \
+COMMENT_JSON=$(ok -X POST "${AUTH[@]}" "${JSON[@]}" \
   -d "{\"text\": \"Created by sandbox-smoke.sh\", \"revision\": $REVISION}" \
   "$BASE/boards/$BOARD/cards/$CARD_ID/comments")
-REVISION=$(jq -r '.board.revision' <<<"$COMMENT_JSON")
-jq '{author: .comment.author}' <<<"$COMMENT_JSON"
+REVISION=$(jq -er '.board.revision' <<<"$COMMENT_JSON")
+jq -e '{author: .comment.author}' <<<"$COMMENT_JSON"
 
-curl -sS -X POST "${AUTH[@]}" "${JSON[@]}" \
+ok -X POST "${AUTH[@]}" "${JSON[@]}" \
   -d "{\"toListId\": \"sbx-list-done\", \"revision\": $REVISION}" \
-  "$BASE/boards/$BOARD/cards/$CARD_ID/move" | jq '{listId, position}'
+  "$BASE/boards/$BOARD/cards/$CARD_ID/move" | jq -e '{listId, position}'
 
 section "4. Nothing was stored"
-curl -sS "${AUTH[@]}" "$BASE/boards/$BOARD" \
-  | jq '.board | {revision, lists: (.data.lists | length)}'
+ok "${AUTH[@]}" "$BASE/boards/$BOARD" \
+  | jq -e '.board | select(.revision == 1760000000000) | {revision, lists: (.data.lists | length)}' \
+  || fail "the sandbox board changed between reads"
 
 section "5. A title the real API rejects too (angle brackets)"
-curl -sS -X POST "${AUTH[@]}" "${JSON[@]}" \
+expect 400 -X POST "${AUTH[@]}" "${JSON[@]}" \
   -d '{"listId": "sbx-list-done", "title": "Ping <@123456>"}' \
-  "$BASE/boards/$BOARD/cards" | jq .
+  "$BASE/boards/$BOARD/cards"
+jq -e '.error == "title_required"' "$BODY_FILE" >/dev/null || fail "expected error title_required"
+jq . "$BODY_FILE"
 
 section "6. Forced failures (X-Sandbox-Scenario)"
-force() { curl -sS -o "$BODY_FILE" -D - "${AUTH[@]}" -H "X-Sandbox-Scenario: $1" "$BASE/me"; }
+force() { expect "$1" "${AUTH[@]}" -H "X-Sandbox-Scenario: $2" "$BASE/me"; }
+show_headers() { tr -d '\r' < "$HEAD_FILE" | grep -i -E "$1"; }
 
 echo "-- revision_conflict"
-curl -sS "${AUTH[@]}" -H "X-Sandbox-Scenario: revision_conflict" "$BASE/me" | jq '{error, currentRevision}'
+force 409 revision_conflict
+jq -e '.error == "revision_conflict"' "$BODY_FILE" >/dev/null || fail "expected error revision_conflict"
+jq '{error, currentRevision}' "$BODY_FILE"
 
 echo "-- rate_limited"
-force rate_limited | tr -d '\r' | grep -i -E '^(HTTP/|retry-after|ratelimit-remaining)'
+force 429 rate_limited
+show_headers '^(HTTP/|retry-after|ratelimit-remaining)'
 
 echo "-- server_error (plain text, not JSON)"
-force server_error | tr -d '\r' | grep -i -E '^(HTTP/|content-type)'
+force 500 server_error
+show_headers '^(HTTP/|content-type)'
 cat "$BODY_FILE"; echo
 
 echo "-- bad_gateway (HTML, not JSON)"
-force bad_gateway | tr -d '\r' | grep -i -E '^(HTTP/|content-type)'
+force 502 bad_gateway
+show_headers '^(HTTP/|content-type)'
 
 echo
-echo "Done. Swap BASE for https://api.jokelboard.com/api/v1 and the token for a real key to go live."
+echo "Done. To go live: set BASE to https://api.jokelboard.com/api/v1, use a real API key, and replace"
+echo "BOARD ('$BOARD') and the list ids with ones that key can reach. Sandbox ids exist only in the sandbox."

@@ -65,7 +65,7 @@ async function createCard(title, { firstAttemptScenario } = {}) {
     }
     // Anything else is not retryable. Report it without assuming JSON.
     const error = res.json?.error ?? `non-JSON response (${res.headers.get('content-type')})`;
-    return { ok: false, error, statuses };
+    return { ok: false, status: res.status, error, statuses };
   }
   return { ok: false, error: 'gave up after 3 attempts', statuses };
 }
@@ -92,10 +92,10 @@ async function main() {
   check('429 card_rate_limited: back off, then retry', r.ok && same(r.statuses, [429, 201]), r.statuses);
 
   r = await createCard('Server crash', { firstAttemptScenario: 'server_error' });
-  check('500 plain text: reported, no JSON.parse crash', !r.ok && /non-JSON/.test(r.error), r.error);
+  check('500 plain text: reported, no JSON.parse crash', !r.ok && r.status === 500 && /non-JSON/.test(r.error), `${r.status}, ${r.error}`);
 
   r = await createCard('Proxy error', { firstAttemptScenario: 'bad_gateway' });
-  check('502 HTML: reported, no JSON.parse crash', !r.ok && /non-JSON/.test(r.error), r.error);
+  check('502 HTML: reported, no JSON.parse crash', !r.ok && r.status === 502 && /non-JSON/.test(r.error), `${r.status}, ${r.error}`);
 
   r = await createCard('Hi <@123456789>');
   check('400 title_required is permanent: not retried', !r.ok && r.error === 'title_required' && same(r.statuses, [400]), r.error);
