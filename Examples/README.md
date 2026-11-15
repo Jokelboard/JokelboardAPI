@@ -46,7 +46,9 @@ All examples are **self-contained** — they use only standard library HTTP clie
 - Use `?projection=cards` when you do not need comments, attachments, or cover images. The server still loads the stored document; this only shrinks the response.
 - Send `Accept-Encoding: gzip` on the tunnel host for JSON ≥ 4 KiB. Do not expect a gzip body for smaller payloads.
 - On organisation boards, every write appears in the audit log. A configured organisation bot key appears as `actor_bot`, while the human key creator remains attached for accountability.
-- `GET /api/v1/me` keeps the human creator in `user` and exposes the optional official identity in `token.bot`.
+- `GET /api/v1/me` returns `user` for a board or profile key and `organisation` (no `user`) for an organisation key; the optional official identity is in `token.bot`.
+- A write reply carries `board` only for a key that may read the board. Otherwise it carries a top-level `revision`; read the next revision from whichever is present.
+- Send board writes one at a time. Several large bodies in flight from one key can get `429 rate_limited`, and a busy service answers `503 server_busy` with `Retry-After`.
 - Bot-authored comments are server-stamped with the bot identity. Cards created without `assignees` default to unassigned for bot keys.
 - Use the narrowest key reach that works: board key before profile or organisation key.
 - Use `categoryId` for the card category. `severity` is still accepted as a legacy alias.
