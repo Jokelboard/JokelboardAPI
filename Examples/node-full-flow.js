@@ -87,10 +87,13 @@ async function main() {
 
   // 1. Verify identity
   const me = await api('/me');
-  const actor = me.token.bot
-    ? `${me.token.bot.name} (official bot; key creator: ${me.user.username})`
-    : me.user.username;
-  console.log(`Authenticated as ${actor} (${me.user.tier}) via token "${me.token.name}"`);
+  // A board or profile key returns its owner under `user`; an organisation key
+  // returns `organisation` and no `user`.
+  const owner = me.user
+    ? `${me.user.username} (${me.user.tier})`
+    : `organisation ${me.organisation.name}`;
+  const actor = me.token.bot ? `${me.token.bot.name} (official bot of ${owner})` : owner;
+  console.log(`Authenticated as ${actor} via token "${me.token.name}"`);
   console.log(`Token scopes: ${me.token.scopes.join(', ')}\n`);
 
   // 2. Get current board state
@@ -117,8 +120,9 @@ async function main() {
       description: item.description || '',
       descriptionMode: 'plain',
       labels: [{ name: 'ci', color: '#ff9f1c' }],
-      // Official bot keys default to unassigned cards; human keys self-assign.
-      ...(me.token.bot ? {} : { assignees: [me.user.sub] }),
+      // Board and profile keys self-assign; organisation keys leave the
+      // assignees to the server (unassigned for an official bot key).
+      ...(me.user ? { assignees: [me.user.sub] } : {}),
     };
     const { card } = await createCardWithRevision(ciList.id, payload, board.revision);
     createdCards.push(card);

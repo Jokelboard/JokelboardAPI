@@ -6,7 +6,7 @@ Official documentation and examples for the Jokelboard Programmatic Board API an
 - Compatibility base URL: `https://jokelboard.com/api/v1`
 - Sandbox base URL (no paid plan needed; any account can mint a sandbox key): `https://api.jokelboard.com/api/sandbox/v1`
 - Status: Stable
-- Last updated: 15 October 2026
+- Last updated: 15 November 2026
 
 The Programmatic Board API lets external applications, scripts, CI jobs, and automation agents read and update Jokelboard boards over HTTPS. Requests use bearer API keys and JSON payloads.
 
@@ -223,6 +223,8 @@ Create request:
 }
 ```
 
+`GET /api/me/tokens` also lists the board keys you minted yourself (from a board's Automations menu or by linking a desktop app), and `DELETE /api/me/tokens/:tokenId` revokes one of them, whatever your current rights on that board. The board-scoped endpoints under [Board Keys](#board-keys) need edit access to the board, so this is how you revoke a key after losing that access.
+
 ### Sandbox API Keys
 
 Sandbox keys (`jkb_sbx_...`) only open the [Sandbox API](#sandbox-api). Any account can mint them, on every plan, and minting does not need fresh authentication. See [Sandbox keys](#sandbox-keys) for how many an account may hold and the request budget.
@@ -267,6 +269,8 @@ The key name is required. After trimming, `default key` and `organisation api ke
 
 Organisation keys are always Programmatic Board API keys. They cannot be plugin-only keys.
 
+An organisation key belongs to the organisation, but it stays valid only while the member who minted it could still mint one. It is revoked when that member leaves or is removed, when a role or grant change takes `CREATE_ORG_API_KEYS` away from them, and when ownership of the organisation is transferred away from them, unless a role still gives them that permission. Keys minted by other members are not affected. For an enterprise the same applies to the keys in its sub-organisations. A revoked key returns `401 invalid_api_token`; mint a new one from an account that holds the permission.
+
 ### Official Bot Accounts
 
 An organisation key may be configured with an official bot identity from the organisation's **API Keys** tab or through the session-authenticated bot endpoint. This is optional metadata on a `kind: "org"` key, not a separate key kind or authentication scheme. Bot identity does not grant additional scopes, board reach, or Plugin API access. Endpoint permissions on the same key are configured separately.
@@ -304,7 +308,7 @@ Successful configuration returns:
 }
 ```
 
-Removing the bot returns `{ "ok": true, "bot": null }`. Token inventory responses and `GET /api/v1/me` expose the same `bot` object, or `null` when the key has no bot identity. The `user` object returned by `GET /api/v1/me` deliberately remains the human key creator for authorization and accountability.
+Removing the bot returns `{ "ok": true, "bot": null }`. Token inventory responses and `GET /api/v1/me` expose the same `bot` object, or `null` when the key has no bot identity. The member who minted the key stays attached to it for authorization and accountability, but `GET /api/v1/me` on an organisation key returns the organisation, not that member's profile (see [GET /api/v1/me](#get-apiv1me)).
 
 The avatar URL uses the logged-in web session rather than bearer-token auth. It is visible to members of the organisation or its parent enterprise, returns `image/webp`, supports `ETag`/`If-None-Match`, and is cached privately for up to 300 seconds. A missing avatar returns `404`; an unrelated user receives `403`.
 
@@ -343,6 +347,7 @@ Rules:
 - A key with `endpointPermissions: null` (the default for existing keys) is unrestricted and may call every Programmatic Board API endpoint it already could.
 - Board and profile keys are not limited by this catalog.
 - Vault endpoints still require vault access in addition to the matching catalog key.
+- A key without `boards.read` cannot read a board through a write either: its write replies carry the new revision and the entity it wrote, not the board (see [Write responses](#write-responses)).
 - The Board Plugin API remains unavailable to organisation keys.
 
 `GET /api/organisations/:id/tokens` returns `endpointPermissionCatalog` plus `endpointPermissions` on each organisation key. `GET /api/v1/me` exposes the same `token.endpointPermissions` field. A denied call returns `403` with `api_endpoint_permission_denied`.
@@ -438,7 +443,32 @@ Returns the token owner and token metadata.
 }
 ```
 
-For a configured organisation key, `token.bot` contains its official `{ name, avatarUrl }` identity. `user` still describes the human key creator.
+A board or profile key returns its owner under `user`. An organisation key returns the organisation instead, with no `user` object: the member who minted the key, and that member's personal plan, are not exposed to whoever holds it.
+
+```json
+{
+  "organisation": {
+    "id": "org-abc",
+    "name": "Acme Studios"
+  },
+  "token": {
+    "id": "tok_def456",
+    "kind": "org",
+    "name": "GitHub issue sync",
+    "tokenPrefix": "jkb_xxxxxxxx",
+    "scopes": ["boards:read", "boards:write"],
+    "boardId": null,
+    "orgId": "org-abc",
+    "createdBySub": "roblox-123",
+    "created_at": 1715000000000,
+    "last_used_at": 1715012345678,
+    "endpointPermissions": null,
+    "bot": { "name": "GitHub Sync", "avatarUrl": "/api/organisations/org-abc/tokens/tok_def456/bot-avatar" }
+  }
+}
+```
+
+Branch on `token.kind` (or on which of `user` / `organisation` is present) rather than assuming `user` exists. For a configured organisation key, `token.bot` contains its official `{ name, avatarUrl }` identity.
 
 ### GET /api/v1/boards
 
@@ -522,6 +552,39 @@ Cheap probe for polling. Returns only identity and the current `revision` (`upda
 
 Recommended poll loop: store `revision`, call this endpoint (or send `If-None-Match` on the full GET), and only refetch `GET /api/v1/boards/:id` when the revision changes.
 
+### Write responses
+
+Every successful write below answers `{ "ok": true, ... }` with the entity the call wrote (`list`, `card`, `comment`, and so on, as shown under each endpoint).
+
+A key that may read the board also receives `board`: the board as stored after the write, in the same shape as `GET /api/v1/boards/:id`, including its new `revision`.
+
+```json
+{
+  "ok": true,
+  "board": {
+    "id": "board-abc123",
+    "name": "Production Incidents",
+    "updated_at": 1715012345678,
+    "revision": 1715012345678,
+    "url": "/api/v1/boards/board-abc123",
+    "data": { "title": "Production Incidents", "lists": [] }
+  },
+  "list": { "id": "list-abc", "title": "Backlog", "cards": [] }
+}
+```
+
+A key that may not read the board gets the new revision instead of the board. That is a token without the `boards:read` scope, or an organisation key whose [endpoint permissions](#organisation-key-endpoint-permissions) do not include `boards.read`, for example one limited to `cards.create` and `cards.comment`.
+
+```json
+{
+  "ok": true,
+  "revision": 1715012345678,
+  "list": { "id": "list-abc", "title": "Backlog", "cards": [] }
+}
+```
+
+To chain writes, take the next `revision` from `board.revision` when `board` is present and from the top-level `revision` otherwise.
+
 ### PUT /api/v1/boards/:id
 
 Replaces the whole board `data` object.
@@ -542,6 +605,8 @@ Rules:
 - `data.lists` must be an array.
 - Unknown board data keys are preserved by clients that include them in the replacement payload.
 - Server-side validation and quota checks are the same checks used by the web UI.
+- Entries of the wrong type are dropped from what is stored, not rejected: lists, cards, comments, labels, attachments and checklist items that are not objects, and assignees that are not strings. A `title` or `subtitle` that is not a string is removed. In a whole-board `PUT`, labels must be label objects (`{ "name": ... }`); the string shorthand is only accepted by card create and patch.
+- A key that may read the board gets it back as stored (see [Write responses](#write-responses)), so compare that with what you sent if you rely on a field surviving.
 
 ### POST /api/v1/boards/:id/lists
 
@@ -633,7 +698,7 @@ Response status: `201 Created`. The response echoes the created card, including 
 }
 ```
 
-After any successful write, refetch `GET /api/v1/boards/:id` (or track the response) to obtain the board's new `revision` before the next mutation.
+After any successful write, take the board's new `revision` from the reply before the next mutation (see [Write responses](#write-responses)), or refetch `GET /api/v1/boards/:id/revision`.
 
 ### PATCH /api/v1/boards/:id/cards/:cardId
 
@@ -694,7 +759,7 @@ Adds a comment to a card. Board and profile keys use the API key owner as the au
 
 Regular comments are capped at 3,000 characters. A request with `"kind": "docucomment"` creates a longer document-style comment capped at 15,000 characters. Bot identity is assigned by the server; client-supplied `botTokenId` and `botOrgId` values cannot forge or replace a bot stamp.
 
-On organisation boards, `@username` mentions create in-app mention notifications for matching org members who can view the board. For a configured bot key, the notification names the bot while retaining the human key creator's user id for accountability.
+On organisation boards, `@username` mentions create in-app mention notifications for matching org members who can view the board. For a configured bot key, the notification names the bot while retaining the human key creator's user id for accountability. One write creates at most 25 mention notifications; mentions beyond that in the same write notify nobody.
 
 ### POST /api/v1/boards/:id/cards/:cardId/move
 
@@ -1058,6 +1123,7 @@ The sandbox is deliberately simple. These are the differences from production:
 - **The plugin toggle always flips the fixture's value**, so toggling twice returns the same answer twice. `GET /plugin/access-level` needs a token (production also has a browser-session mode).
 - **Rate limits are the sandbox's own:** your account's [sandbox budget](#sandbox-keys), plus a backstop of 1200 requests per IP per 15 minutes, reported in `RateLimit-*`. They say nothing about your production budget. The card-creation burst guard exists only as a scenario.
 - **Bot identity on whole-board writes.** The `org` persona signs comments as the bot, but a whole-board `PUT` is not re-stamped, whereas production also overwrites forged bot stamps.
+- **Every persona that can write can also read**, so the board-less write reply a restricted key gets in production (see [Write responses](#write-responses)) cannot be produced here.
 - `board.url` points back into the sandbox, responses are not gzipped, and there are no side effects: no audit log, no @-mention notifications, no live updates.
 
 ### Behaviour it reproduces
@@ -1067,6 +1133,7 @@ These catch real integrations out, and the sandbox returns the same errors:
 - Card and list titles and comment text reject `<` and `>`, so a Discord mention such as `<@123456>` in a card title returns `400 title_required` (in a comment, `400 text_required`). A title containing a tab passes that check but is refused when the board is saved, with `403 invalid_card_title`. Labels are looser: an *object* label whose `name` contains `<` or `>` is silently dropped, while a *string* label such as `"<@123>"` is kept as is.
 - Attachment URLs must be `http://` or `https://`; anything else returns `403 invalid_attachment_url`.
 - A `PUT` replaces the whole board. A key without vault access keeps the stored vault regardless of the `vaultedCards` it sends.
+- `GET /me` under the `org` and `org_limited` personas returns `organisation` (`sbx-org-1`, "Sandbox organisation") and no `user`, as production does for an organisation key.
 - `ETag` / `If-None-Match` work on `GET /boards/:id`, `/revision`, and the plugin board. A `304` has no body.
 
 ### Moving to production
@@ -1230,6 +1297,35 @@ Exceeded budgets return HTTP `429` with `{ "error": "rate_limited" }` and standa
 
 Website session routes remain at 3000 requests / 15 minutes per IP. The [Sandbox API](#sandbox-api) has its own per-account budgets, see [Sandbox keys](#sandbox-keys).
 
+### Request bodies
+
+Bodies are limited by size, by shape, and by how many are being read at once.
+
+| Limit | Value | When exceeded |
+|-------|-------|---------------|
+| Body size on board routes (`/boards`, `/boards/...`) | 4 MiB | `413 payload_too_large` with `maxBytes` |
+| Body size on every other route | 256 KiB | `413 payload_too_large` with `maxBytes` |
+| Body sent without a live API key | 16 KiB | `413 payload_too_large`, before the `401` |
+| Objects and arrays in one JSON body | 4,096 plus one per 8 bytes of body, never more than 1,000,000 | `413 payload_too_complex` |
+| Bodies in flight per key | 16, and 8 MiB in total when more than one is in flight | `429 rate_limited` |
+| Bodies in flight across the whole service | shared budget | `503 server_busy` with `Retry-After: 1` |
+
+A real board averages about one object or array per 60 bytes, so the shape limit only catches bodies that are almost entirely empty containers.
+
+A single request is always admitted by the per-key rule, whatever its size, so a client that sends its board writes one at a time never sees that `429`. It differs from the request-budget `429` above: it carries no `RateLimit-*` headers, and it clears as soon as one of the key's requests finishes. Treat `503 server_busy` the same way: wait for `Retry-After` and resend.
+
+Compressed request bodies (`Content-Encoding: gzip`, `deflate` or `br`) are accepted and must declare `Content-Length` (`411 content_length_required` otherwise; an unknown encoding is `415 unsupported_content_encoding`). What a compressed body may unpack to depends on its size on the wire:
+
+| Compressed size | May unpack to |
+|-----------------|---------------|
+| up to 20 KiB | 1 MiB |
+| up to 40 KiB | 2 MiB |
+| larger | 4 MiB (the board-route limit) |
+
+That allows about 50 times compression. For a body that compresses better than that, state its uncompressed size in bytes in an `X-Uncompressed-Length` header: the server then takes the limit from the stated size, rounded up to 256 KiB, 1 MiB, 2 MiB or 4 MiB, and never above 4 MiB. A body that unpacks past its limit is `413 payload_too_large`. Off the board routes a compressed body is still held to 256 KiB unpacked.
+
+A request whose body takes more than 120 seconds to arrive is dropped.
+
 ### Card Creation Burst Guard
 
 The v1 write surface limits new card creation to 10 cards per 5 seconds per user and board. This protects boards from runaway scripts and accidental import loops.
@@ -1293,7 +1389,12 @@ Common codes:
 | `invalid_projection` | 400 | `?projection=` was not `full` or `cards` |
 | `invalid_list_filter` | 400 | `listId` and `lists` were both sent, or `lists` was empty |
 | `card_rate_limited` | 429 | Too many cards created in the burst window |
-| `rate_limited` | 429 | Token or IP HTTP budget exceeded |
+| `rate_limited` | 429 | Token or IP HTTP budget exceeded, or too many request bodies in flight for one key ([Request bodies](#request-bodies)) |
+| `payload_too_large` | 413 | Request body over the route's size limit, or a compressed body that unpacks past its limit; carries `maxBytes` |
+| `payload_too_complex` | 413 | JSON body with far more objects and arrays than board data has |
+| `content_length_required` | 411 | Compressed request body sent without `Content-Length` |
+| `unsupported_content_encoding` | 415 | `Content-Encoding` other than `gzip`, `deflate` or `br` |
+| `server_busy` | 503 | The service is reading too many request bodies at once; resend after `Retry-After` |
 | `invalid_data` | 400 | Whole-board replacement payload is invalid |
 | `invalid_card_patch` | 400 | Card patch payload failed validation |
 | `invalid_type` | 400 | Token creation type was not `programmatic` or `plugin` |
@@ -1322,7 +1423,9 @@ On organisation and sub-organisation boards:
 - Audit bot identity is resolved at read time: configuring or renaming a bot changes how that key's older entries render. Revoking a configured key does not erase its historical bot attribution.
 - Organisation key creation, revocation, bot update, and bot removal are recorded in the organisation audit log.
 - New comments written by a configured bot key are stamped with the bot name and show a `BOT` badge. Bot stamps are server-owned and cannot be forged through whole-board writes.
-- Comment mentions (`@username`) create notification rows for matching org members who can view the board. Bot-authored notifications show the bot name while retaining the human creator's user id.
+- Comment mentions (`@username`) create notification rows for matching org members who can view the board. Bot-authored notifications show the bot name while retaining the human creator's user id. One write creates at most 25 of them.
+- One write lists at most 200 itemised audit entries. A larger change, such as a whole-board `PUT` touching hundreds of cards, is recorded as its first 200 entries plus one `board.changes_truncated` entry counting the rest.
+- A write that changes the text of an existing comment is recorded as `card.comment_edited`.
 - Plugin checklist toggles on org boards are also audit logged.
 
 Personal boards do not write organisation audit entries.
@@ -1354,7 +1457,8 @@ See the [`Examples/`](./Examples) directory:
 6. Use HTTPS only.
 7. Scan logs and `.env` files for the `jkb_` prefix before sharing them.
 8. Give each organisation automation a descriptive key name and, when it acts publicly, a distinct bot identity so audit attribution stays legible.
-9. Sandbox keys (`jkb_sbx_...`) reach only fake data, but they are tied to your account and spend its sandbox budget: keep them out of public repos and revoke a leaked one. Never send a real key to the Sandbox API.
+9. Limit an organisation key to the endpoints its integration calls. A key without `boards.read` cannot read boards, including through the replies to its own writes.
+10. Sandbox keys (`jkb_sbx_...`) reach only fake data, but they are tied to your account and spend its sandbox budget: keep them out of public repos and revoke a leaked one. Never send a real key to the Sandbox API.
 
 ---
 

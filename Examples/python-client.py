@@ -83,7 +83,12 @@ def main():
 
     # 1. Who am I?
     me = api("GET", "/me")
-    print(f"Authenticated as {me['user']['username']} (tier: {me['user']['tier']})")
+    # A board or profile key returns its owner under "user"; an organisation
+    # key returns "organisation" and no "user".
+    if "user" in me:
+        print(f"Authenticated as {me['user']['username']} (tier: {me['user']['tier']})")
+    else:
+        print(f"Authenticated as organisation {me['organisation']['name']}")
     print(f"Token: {me['token']['name']} — scopes: {', '.join(me['token']['scopes'])}\n")
 
     # 2. Current board state
