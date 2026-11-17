@@ -6,7 +6,7 @@ Official documentation and examples for the Jokelboard Programmatic Board API an
 - Compatibility base URL: `https://jokelboard.com/api/v1`
 - Sandbox base URL (no paid plan needed; any account can mint a sandbox key): `https://api.jokelboard.com/api/sandbox/v1`
 - Status: Stable
-- Last updated: 15 November 2026
+- Last updated: 17 November 2026
 
 The Programmatic Board API lets external applications, scripts, CI jobs, and automation agents read and update Jokelboard boards over HTTPS. Requests use bearer API keys and JSON payloads.
 
@@ -674,6 +674,7 @@ Notes:
 - `fieldValues` are applied through `PATCH /boards/:id/cards/:cardId`, not during card creation.
 - If `assignees` is omitted or normalises to an empty list, a human-owned key defaults to the key owner's user id. A bot-configured organisation key instead defaults to `[]`; send explicit assignees when the bot should assign the card.
 - `kind: "filler"` creates a minimal filler card with `id`, `kind`, `title`, and `comments`.
+- Title cards (`kind: "title"`) cannot be created here; they are made on the board. A request that sends `kind: "title"` creates a normal card.
 
 Card configuration can be set at creation with `descriptionSize`, `dateType`, `due`, `dueJoin`, and `dueDepart`. The date modes are:
 
@@ -743,6 +744,8 @@ Example:
 `fieldValues` are capped to 64 keys. Keys longer than 64 characters are ignored, and values are stored as strings capped to 64 characters. Send `"fieldValues": null` to clear the field values.
 
 `descriptionSize` accepts `small`, `normal`, or `large`; `normal` is the default. `dateType` accepts `due`, `static`, or `employee`; `due` is the default. The API represents both defaults by omitting the corresponding property from stored card responses. Send the default value (or `null`) to reset a custom configuration. Send `null` for `due`, `dueJoin`, or `dueDepart` to clear that date.
+
+Filler cards (`kind: "filler"`) and title cards (`kind: "title"`) accept only `title`; every other field in the patch is ignored. A title card draws its own `≪ ≫` chevrons, so the server removes any `≪` or `≫` from a new title and collapses runs of whitespace to one space. A title that is empty after that is rejected like any other empty title.
 
 The response echoes the updated card under `card`.
 
@@ -1193,7 +1196,9 @@ Soft-deleted cards live in each list's `vaultedCards` array rather than a single
 ```ts
 interface BoardCard {
   id: string;
-  kind?: 'filler' | string;
+  kind?: 'filler' | 'title' | string;
+  chevrons?: boolean; // title cards only; omitted means the chevrons are shown
+  fillerStyle?: 'line' | 'text'; // filler cards only; omitted means text
   ticket?: string;
   createdAt?: number; // Unix epoch ms, server-stamped at creation (see below)
   title: string;
@@ -1214,6 +1219,7 @@ interface BoardCard {
     text: string;
     ts: number;
     kind?: 'docucomment' | 'comment';
+    reactions?: Record<'👍' | '🎉' | '👀' | '✅' | '🚀' | '🔥', string[]>; // emoji -> user ids
   }>;
   checklist?: {
     items: Array<{ id?: string; text: string; done: boolean }>;
@@ -1231,6 +1237,10 @@ interface BoardCard {
 ```
 
 `botTokenId` and `botOrgId` are read-only provenance fields. The server stamps them only on new comments written by a configured organisation bot key, strips forged stamps, and prevents later writes from changing an existing bot-stamped comment's identity.
+
+A title card (`kind: "title"`) is a heading on a list, shown between `≪ ≫` chevrons unless `chevrons` is `false`. A filler card shows its title as text, or as a plain divider line when `fillerStyle` is `"line"`. Both fields are set in the board UI or by a whole-board `PUT`; `PATCH` cannot change them. A whole-board `PUT` that stores any other value is rejected with `invalid_chevrons` or `invalid_filler_style`. `projection=cards` keeps `kind` but drops `chevrons` and `fillerStyle`.
+
+`reactions` holds the emoji reactions people leave under a comment, keyed by emoji, each with the user ids that reacted. Only the six emoji above are stored, and an emoji with no one left is omitted, as is `reactions` itself when a comment has none. Reactions are a person's own: an API key is not a person, so no API write can add, remove, or change them. A whole-board `PUT` keeps every stored reaction whatever its payload sends, so a client that round-trips the board cannot drop one. When a user's account is erased, their reactions are removed.
 
 `createdAt` is the card's creation time in Unix epoch milliseconds. It is server-owned: stamped when the card is created (board UI or `POST /boards/:id/cards`), and implausible client-supplied values are replaced or dropped at save time. Cards created before the field existed have their timestamp recovered from the card id encoding where possible — both on API reads and via a persistent backfill on the board's next save. A card whose creation time is genuinely unknown omits the field; the API never fabricates a date.
 
@@ -1397,6 +1407,8 @@ Common codes:
 | `server_busy` | 503 | The service is reading too many request bodies at once; resend after `Retry-After` |
 | `invalid_data` | 400 | Whole-board replacement payload is invalid |
 | `invalid_card_patch` | 400 | Card patch payload failed validation |
+| `invalid_chevrons` | 403 | Whole-board payload set a title card's `chevrons` to something other than `true` or `false` |
+| `invalid_filler_style` | 403 | Whole-board payload set a filler's `fillerStyle` to something other than `"line"` or `"text"` |
 | `invalid_type` | 400 | Token creation type was not `programmatic` or `plugin` |
 | `name_required` | 400 | Token/list/card name or title was empty after sanitisation |
 | `name_reserved` | 400 | Organisation key name matched a reserved default name |
