@@ -497,7 +497,7 @@ Lists boards reachable by the key.
 
 ### GET /api/v1/boards/:id
 
-Fetches the board payload, including `data`. The default shape is the complete document (lists, cards, comments, attachments, inlined cover images, presets).
+Fetches the board payload, including `data`. The default shape is the complete document (lists, cards, comments, attachments, cover images, presets).
 
 Query parameters (all optional, additive — omit them and the response is unchanged):
 
@@ -506,10 +506,13 @@ Query parameters (all optional, additive — omit them and the response is uncha
 | `projection` | `full` (default), `cards` | `cards` keeps list/card identity, titles, labels, assignees, due dates, field values, descriptions, and checklists. It drops comments, attachments, cover images, vaulted cards, and board presets. |
 | `listId` | a list id | Return only that list. Unknown ids return `404 list_not_found`. |
 | `lists` | comma-separated list ids | Return those lists in **board order**. Any unknown id returns `404 list_not_found`. Do not send `listId` and `lists` together (`400 invalid_list_filter`). |
+| `images` | `embed`, `refs` | How a `full` document carries cover images. Unset: embedded while the board's covers total 2 MiB or less, references past that. `refs`: always references. `embed`: always data URLs, or `413 images_too_large_to_embed` (with `limit` and `current` in bytes) when the covers total more than 2 MiB. Any other value is `400 invalid_images`. Ignored for `projection=cards`. |
 
 `projection=cards` is the right default for game servers, CI, and other clients that only need the kanban structure. List filters and projections shrink the **response**, not the server-side read: the stored document is still loaded, then filtered in memory. Cover images are not hydrated for `projection=cards`. List filters are a payload convenience, not an access-control boundary: a key that can read the board can still request any list.
 
-Successful responses send `ETag` and `Cache-Control: private, no-cache`. Repeat the request with `If-None-Match` set to the previous `ETag` value **verbatim** to get `304 Not Modified` and an empty body when the board (and the same projection, list filter, and vault-visibility of the caller) has not changed. The ETag is derived from `updated_at` plus those inputs, so a matching 304 does not serialize the document. Replay the header as returned; commas inside `?lists=` tags are part of the quoted ETag, not list separators.
+A `full` response says how it carries cover images in `board.images`: `"embed"` or `"refs"`. Embedded, each card's `image` holds the picture as a `data:` URL. As a reference it holds the stored image's `mediaId` with its `mime`, `w`, `h` and `bytes`, and no `data`. The 2 MiB figure counts every cover on the board, vaulted cards' included, whichever lists you asked for. A board whose covers have grown past it switches from `embed` to `refs` without being asked, so check `board.images` (or the presence of `image.data`) rather than assuming data URLs. The API does not serve a referenced image's bytes. A document read with `images=refs` is a valid `PUT` body as it stands (see [PUT /api/v1/boards/:id](#put-apiv1boardsid)).
+
+Successful responses send `ETag` and `Cache-Control: private, no-cache`. Repeat the request with `If-None-Match` set to the previous `ETag` value **verbatim** to get `304 Not Modified` and an empty body when the board (and the same projection, list filter, `images` choice, and vault-visibility of the caller) has not changed. The ETag is derived from `updated_at` plus those inputs, so a matching 304 does not serialize the document. Replay the header as returned; commas inside `?lists=` tags are part of the quoted ETag, not list separators.
 
 ```http
 GET /api/v1/boards/board-abc123?projection=cards&listId=admin
@@ -556,7 +559,7 @@ Recommended poll loop: store `revision`, call this endpoint (or send `If-None-Ma
 
 Every successful write below answers `{ "ok": true, ... }` with the entity the call wrote (`list`, `card`, `comment`, and so on, as shown under each endpoint).
 
-A key that may read the board also receives `board`: the board as stored after the write, in the same shape as `GET /api/v1/boards/:id`, including its new `revision`.
+A key that may read the board also receives `board`: the board as stored after the write, in the same shape as `GET /api/v1/boards/:id`, including its new `revision`. Its cover images follow the unset `images` rule (embedded up to 2 MiB together, references past that), and `board.images` says which.
 
 ```json
 {
@@ -567,6 +570,7 @@ A key that may read the board also receives `board`: the board as stored after t
     "updated_at": 1715012345678,
     "revision": 1715012345678,
     "url": "/api/v1/boards/board-abc123",
+    "images": "embed",
     "data": { "title": "Production Incidents", "lists": [] }
   },
   "list": { "id": "list-abc", "title": "Backlog", "cards": [] }
@@ -607,6 +611,7 @@ Rules:
 - Server-side validation and quota checks are the same checks used by the web UI.
 - Entries of the wrong type are dropped from what is stored, not rejected: lists, cards, comments, labels, attachments and checklist items that are not objects, and assignees that are not strings. A `title` or `subtitle` that is not a string is removed. In a whole-board `PUT`, labels must be label objects (`{ "name": ... }`); the string shorthand is only accepted by card create and patch.
 - A key that may read the board gets it back as stored (see [Write responses](#write-responses)), so compare that with what you sent if you rely on a field surviving.
+- A card's `image` may be a data URL or a reference (`mediaId`, `w`, `h`, `bytes`) to a cover already stored on **this** board, so a document read with `images=refs` round-trips unchanged. The server takes a reference's size and dimensions from the stored image, not from your payload. A reference to an image this board does not hold is dropped from the card. A new cover must be sent as a data URL of 25 KiB or less. Embedding every cover can push a large board past the 4 MiB body limit, so read with `images=refs` before a whole-board replace.
 
 ### POST /api/v1/boards/:id/lists
 
@@ -828,7 +833,7 @@ Whole-board `PUT` can still persist `vaultedCards` for clients that manage the f
 
 ### GET /api/v1/boards/:id/vault
 
-Lists vaulted cards grouped by the list they were deleted from. Only lists with at least one vaulted card appear.
+Lists vaulted cards grouped by the list they were deleted from. Only lists with at least one vaulted card appear. Cover images are embedded while the board's covers total 2 MiB or less and are references past that, as in the board read; this response has no `images` field, so check each `image` for `data`.
 
 Requires scope: `boards:read` and vault access.
 
@@ -1121,7 +1126,7 @@ The sandbox is deliberately simple. These are the differences from production:
 - **It is stateless.** A write is validated and answered with the board as it would now be, but the next read is the pristine fixture again. A bot that creates a card and then asserts that it appears in `GET /boards/:id` fails in the sandbox and passes in production.
 - **Revisions cannot go stale.** A `revision` is accepted if it equals the board revision (`1760000000000`) or is up to 1000 above it, and a write answers with the revision you sent **plus one**, so a client that chains revisions runs end to end. Any other value is `409 revision_conflict`. The sandbox cannot detect that *another writer* got in first; test that path with `X-Sandbox-Scenario: revision_conflict`. A write with no `revision` succeeds with the `Warning: 299` header, as in production.
 - **Only ids the sandbox issued resolve.** A card or list you create gets an `sbx-new-card-*` / `sbx-new-list-*` id that ends in a short checksum, and later calls accept exactly those, so create, update, then move flows work. Any other id you invent (a typo, a stale id, a made-up `sbx-new-card-anything`, or a custom `id` you passed on create) is `404 card_not_found` or `list_not_found`. Vaulting and restoring work on any known card, as if you had just vaulted it.
-- **Plan quotas and cover images are not simulated.** Use `X-Sandbox-Scenario: card_limit` to see the error shape.
+- **Plan quotas and cover images are not simulated.** Use `X-Sandbox-Scenario: card_limit` to see the error shape. A full board read answers `board.images` as `"refs"` when you ask for `images=refs` and `"embed"` otherwise; the sandbox never sends `413 images_too_large_to_embed`.
 - **Request bodies are capped at 256 KB.** Production accepts up to 4 MiB for board writes, so a large `PUT` that works in production returns `413 payload_too_large` here.
 - **The plugin toggle always flips the fixture's value**, so toggling twice returns the same answer twice. `GET /plugin/access-level` needs a token (production also has a browser-session mode).
 - **Rate limits are the sandbox's own:** your account's [sandbox budget](#sandbox-keys), plus a backstop of 1200 requests per IP per 15 minutes, reported in `RateLimit-*`. They say nothing about your production budget. The card-creation burst guard exists only as a scenario.
@@ -1229,7 +1234,14 @@ interface BoardCard {
   dateType?: 'static' | 'employee'; // omitted means due
   dueJoin?: { iso: string } | null;
   dueDepart?: { iso: string } | null;
-  image?: { data: string; w: number; h: number; bytes: number } | null;
+  image?: {
+    data?: string; // data URL; absent when the document carries references
+    mediaId?: string; // the stored image; present on every cover the server has stored
+    mime?: string;
+    w: number;
+    h: number;
+    bytes: number;
+  } | null;
   components?: Record<string, boolean>;
   vaultedAt?: number; // set only while the card is in vaultedCards
   vaultedBy?: string | null; // set only while the card is in vaultedCards
@@ -1254,7 +1266,7 @@ Validation highlights:
 - Checklist items are capped at 200 per patch.
 - Attachment arrays are capped at 100 per patch.
 - Plain-text title and label inputs reject control characters and angle brackets.
-- Plan quotas still apply to total cards, lists, labels, image cards, and storage bytes.
+- Plan quotas still apply to lists, labels and storage bytes, and to total cards and cover-image cards on plans that cap them. Cover images count toward storage bytes at their own size.
 
 ---
 
@@ -1363,8 +1375,12 @@ Every write is also checked against the governing tier's limits, including:
 - Cards per board
 - Lists per board
 - Labels per card
-- Image cards per board
-- Organisation storage bytes
+- Cover-image cards per board
+- Storage bytes, per board or per organisation depending on the plan
+
+The plans that include the Programmatic Board API (personal Ultra; organisation FL Pro, Business, SME Business and Enterprise) do not cap cards or cover-image cards by count: storage bytes are their only ceiling, unless an enterprise has been given custom limits. Smaller plans keep their count caps.
+
+Cover images count toward storage bytes on every plan, each at its own size (25 KiB at most), vaulted cards' covers included. The size is measured by the server from the image itself, never from the `bytes` a client sends.
 
 Quota failures return a typed error such as `card_limit` or `list_limit` with upgrade metadata when available.
 
@@ -1398,6 +1414,8 @@ Common codes:
 | `card_exists` | 409 | Client-supplied card id already exists |
 | `invalid_projection` | 400 | `?projection=` was not `full` or `cards` |
 | `invalid_list_filter` | 400 | `listId` and `lists` were both sent, or `lists` was empty |
+| `invalid_images` | 400 | `?images=` was not `embed` or `refs` |
+| `images_too_large_to_embed` | 413 | `?images=embed` on a board whose cover images total more than 2 MiB; carries `limit` and `current`. Read it with `images=refs` |
 | `card_rate_limited` | 429 | Too many cards created in the burst window |
 | `rate_limited` | 429 | Token or IP HTTP budget exceeded, or too many request bodies in flight for one key ([Request bodies](#request-bodies)) |
 | `payload_too_large` | 413 | Request body over the route's size limit, or a compressed body that unpacks past its limit; carries `maxBytes` |
