@@ -1138,8 +1138,8 @@ The sandbox is deliberately simple. These are the differences from production:
 
 These catch real integrations out, and the sandbox returns the same errors:
 
-- Card and list titles and comment text reject `<` and `>`, so a Discord mention such as `<@123456>` in a card title returns `400 title_required` (in a comment, `400 text_required`). A title containing a tab passes that check but is refused when the board is saved, with `403 invalid_card_title`. Labels are looser: an *object* label whose `name` contains `<` or `>` is silently dropped, while a *string* label such as `"<@123>"` is kept as is.
-- Attachment URLs must be `http://` or `https://`; anything else returns `403 invalid_attachment_url`.
+- Card and list titles and comment text reject `<` and `>`, so a Discord mention such as `<@123456>` in a card title returns `400 title_required` (in a comment, `400 text_required`). A title containing a tab passes that check but is refused when the board is saved, with `400 invalid_card_title`. Labels are looser: an *object* label whose `name` contains `<` or `>` is silently dropped, while a *string* label such as `"<@123>"` is kept as is.
+- Attachment URLs must be `http://` or `https://`; anything else returns `400 invalid_attachment_url`.
 - A `PUT` replaces the whole board. A key without vault access keeps the stored vault regardless of the `vaultedCards` it sends.
 - `GET /me` under the `org` and `org_limited` personas returns `organisation` (`sbx-org-1`, "Sandbox organisation") and no `user`, as production does for an organisation key.
 - `ETag` / `If-None-Match` work on `GET /boards/:id`, `/revision`, and the plugin board. A `304` has no body.
@@ -1390,6 +1390,8 @@ Quota failures return a typed error such as `card_limit` or `list_limit` with up
 
 Errors are JSON objects with a machine-readable `error` code. Many errors also include `message` and additional metadata.
 
+A payload the server refuses for its content answers `400`. `403` means the key or its owner may not make the call, and `409` means a quota or a stale revision. Until November 2026 the whole-board content checks (`invalid_card_title`, `invalid_list_title`, `card_title_too_long`, `list_title_too_long`, `invalid_attachment_url`, `invalid_chevrons`, `invalid_filler_style` and the other `invalid_*` codes of a `PUT`) answered `403`; the codes and bodies are unchanged, so match on `error` rather than the status.
+
 Common codes:
 
 | Code | HTTP | Meaning |
@@ -1425,8 +1427,11 @@ Common codes:
 | `server_busy` | 503 | The service is reading too many request bodies at once; resend after `Retry-After` |
 | `invalid_data` | 400 | Whole-board replacement payload is invalid |
 | `invalid_card_patch` | 400 | Card patch payload failed validation |
-| `invalid_chevrons` | 403 | Whole-board payload set a title card's `chevrons` to something other than `true` or `false` |
-| `invalid_filler_style` | 403 | Whole-board payload set a filler's `fillerStyle` to something other than `"line"` or `"text"` |
+| `invalid_card_title`, `invalid_list_title` | 400 | Whole-board payload has a title containing `<`, `>` or a control character |
+| `card_title_too_long`, `list_title_too_long` | 400 | Whole-board payload has a card title over 200 characters or a list title over 80; carries `limit` |
+| `invalid_attachment_url` | 400 | Whole-board payload has an attachment URL that is not `http://` or `https://` |
+| `invalid_chevrons` | 400 | Whole-board payload set a title card's `chevrons` to something other than `true` or `false` |
+| `invalid_filler_style` | 400 | Whole-board payload set a filler's `fillerStyle` to something other than `"line"` or `"text"` |
 | `invalid_type` | 400 | Token creation type was not `programmatic` or `plugin` |
 | `name_required` | 400 | Token/list/card name or title was empty after sanitisation |
 | `name_reserved` | 400 | Organisation key name matched a reserved default name |
